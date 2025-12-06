@@ -111,8 +111,7 @@ The Weston IVI Controller requires:
    shell=ivi-shell.so
    
    # Load the RPC controller module
-   # Note: Reference without 'lib' prefix (standard Linux convention)
-   modules=weston_ivi_controller.so
+   modules=weston-ivi-controller.so
    ```
 
 4. Restart Weston for changes to take effect:
@@ -126,13 +125,13 @@ The Weston IVI Controller requires:
 
 ### How It Works
 
-The module (built as `libweston_ivi_controller.so`, referenced as `weston_ivi_controller.so` in config):
+The module (built as `libweston_ivi_controller.so`, referenced as `weston-ivi-controller.so` in config):
 - Loads as a Weston plugin and retrieves the IVI layout API directly from the compositor
 - Uses the `ivi-layout-export.h` interface to control IVI surfaces
 - Does not require the deprecated `ivi-controller.so` module
 - Provides RPC access to the IVI layout API via UNIX domain sockets
 
-**Note on naming:** The build produces `libweston_ivi_controller.so` (with `lib` prefix), but in configuration files you reference it as `weston_ivi_controller.so` (without `lib` prefix). This is standard Linux shared library convention.
+**Note on naming:** The build produces `libweston_ivi_controller.so` and a symbolic link `weston-ivi-controller.so` to it. Please use `weston-ivi-controller.so` in the Weston configuration.
 
 ## Usage
 
@@ -357,7 +356,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ```ini
 [core]
 shell=ivi-shell.so
-modules=weston_ivi_controller.so
+modules=weston-ivi-controller.so
 ```
 
 The IVI shell (`ivi-shell.so`) must be loaded for the controller to access the IVI layout API.

@@ -223,4 +223,49 @@ extern "C" {
             fs::write(&weston_bindings_path, stub).expect("Couldn't write stub Weston bindings!");
         }
     }
+
+    // Create symbolic link in target directory
+    // Note: This creates the link even if the library doesn't exist yet
+    create_symlink();
+}
+
+fn create_symlink() {
+    use std::os::unix::fs::symlink;
+
+    // Get the profile (debug or release)
+    let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+
+    // Get the target triple (e.g., aarch64-unknown-linux-gnu, x86_64-unknown-linux-gnu)
+    let target = env::var("TARGET").unwrap_or_else(|_| "".to_string());
+
+    // Build the target directory path
+    let target_dir = if target.is_empty() {
+        // Native build: target/<profile>
+        PathBuf::from("target").join(&profile)
+    } else {
+        // Cross-compilation: target/<target>/<profile>
+        PathBuf::from("target").join(&target).join(&profile)
+    };
+
+    // Create target directory if it doesn't exist
+    let _ = fs::create_dir_all(&target_dir);
+
+    let lib_name = "libweston_ivi_controller.so";
+    let link_name = "weston-ivi-controller.so";
+    let link_path = target_dir.join(link_name);
+
+    // Remove existing symlink if it exists
+    let _ = fs::remove_file(&link_path);
+
+    // Create symlink (relative path)
+    if let Err(e) = symlink(lib_name, &link_path) {
+        eprintln!("Warning: Failed to create symlink {}: {}", link_name, e);
+    } else {
+        println!(
+            "Created symlink: {} -> {} in {}",
+            link_name,
+            lib_name,
+            target_dir.display()
+        );
+    }
 }

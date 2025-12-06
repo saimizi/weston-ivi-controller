@@ -61,7 +61,7 @@ Copy the plugin to Weston's plugin directory (typically `/usr/lib/weston/`) and 
 ```ini
 [core]
 shell=ivi-shell.so
-modules=weston_ivi_controller.so
+modules=weston-ivi-controller.so
 ```
 
 Note: Reference without 'lib' prefix in config (standard Linux convention).
