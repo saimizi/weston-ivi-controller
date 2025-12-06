@@ -66,10 +66,11 @@ pub use error::{ControllerError, ControllerResult};
 use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
 
 use std::ffi::CStr;
-use std::os::raw::{c_char, c_int, c_void};
 use std::panic;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+
+use libc::{c_char, c_int, c_void};
 
 use controller::{EventContext, EventListeners, IviLayoutApi, StateManager};
 use rpc::RpcHandler;
@@ -87,7 +88,7 @@ struct PluginState {
 /// Plugin initialization function called by Weston
 ///
 /// # Arguments
-/// * `compositor` - Pointer to the Weston compositor (unused in this implementation)
+/// * `compositor` - Pointer to the Weston compositor
 /// * `argc` - Number of command-line arguments
 /// * `argv` - Array of command-line argument strings
 ///
@@ -96,12 +97,14 @@ struct PluginState {
 /// * -1 on failure
 #[no_mangle]
 pub extern "C" fn wet_module_init(
-    _compositor: *mut c_void,
+    compositor: *mut c_void,
     argc: c_int,
     argv: *const *const c_char,
 ) -> c_int {
     // Catch panics to prevent unwinding across FFI boundary
-    let result = panic::catch_unwind(|| unsafe { plugin_init_impl(argc, argv) });
+    let result = panic::catch_unwind(|| unsafe {
+        plugin_init_impl(compositor as *mut ffi::weston_compositor, argc, argv)
+    });
 
     match result {
         Ok(Ok(state)) => {
@@ -127,7 +130,11 @@ pub extern "C" fn wet_module_init(
 /// - Dereferences raw pointers from C
 /// - Calls FFI functions
 /// - Assumes the IVI layout API pointer is valid
-unsafe fn plugin_init_impl(argc: c_int, argv: *const *const c_char) -> Result<PluginState, String> {
+unsafe fn plugin_init_impl(
+    compositor: *mut ffi::weston_compositor,
+    argc: c_int,
+    argv: *const *const c_char,
+) -> Result<PluginState, String> {
     JloggerBuilder::new()
         .log_console(true)
         .log_file(Some(("/tmp/weston-ivi-controller.log", false)))
@@ -142,11 +149,8 @@ unsafe fn plugin_init_impl(argc: c_int, argv: *const *const c_char) -> Result<Pl
 
     jinfo!("Using socket path: {:?}", socket_path);
 
-    // Retrieve the IVI layout API from Weston
-    // Note: In a real implementation, this would be obtained from the compositor
-    // For now, we'll need to get it from the compositor's plugin API
-    // This is a placeholder - the actual implementation depends on Weston's plugin interface
-    let ivi_api_ptr = get_ivi_layout_api();
+    // Retrieve the IVI layout API from Weston compositor
+    let ivi_api_ptr = get_ivi_layout_api(compositor);
 
     if ivi_api_ptr.is_null() {
         jerror!("Failed to retrieve IVI layout API from compositor");
@@ -254,15 +258,35 @@ unsafe fn parse_socket_path(argc: c_int, argv: *const *const c_char) -> Option<P
 /// # Safety
 /// This function is unsafe because it interacts with C FFI
 ///
-/// Note: This is a placeholder implementation. In a real Weston plugin,
-/// the IVI layout API would be obtained through the compositor's plugin
-/// interface, typically through a function like:
-/// `weston_plugin_api_get(compositor, IVI_LAYOUT_API_NAME, sizeof(ivi_layout_interface))`
-unsafe fn get_ivi_layout_api() -> *const ffi::bindings::ivi_layout_interface {
-    // This is a placeholder that returns null
-    // In a real implementation, this would call into Weston's plugin API
-    // to retrieve the IVI layout interface
-    std::ptr::null()
+/// # Arguments
+/// * `compositor` - Pointer to the Weston compositor
+///
+/// # Returns
+/// Pointer to the IVI layout interface, or null if not available
+unsafe fn get_ivi_layout_api(
+    compositor: *mut ffi::weston_compositor,
+) -> *const ffi::bindings::ivi_layout_interface {
+    if compositor.is_null() {
+        jerror!("Compositor pointer is null");
+        return std::ptr::null();
+    }
+
+    jinfo!("Retrieving IVI layout API from Weston compositor");
+
+    // Call Weston's plugin API to get the IVI layout interface
+    let api_ptr = ffi::weston_plugin_api_get(
+        compositor,
+        ffi::IVI_LAYOUT_API_NAME.as_ptr() as *const c_char,
+        std::mem::size_of::<ffi::bindings::ivi_layout_interface>(),
+    );
+
+    if api_ptr.is_null() {
+        jerror!("Failed to retrieve IVI layout API - ensure IVI shell is loaded");
+        return std::ptr::null();
+    }
+
+    jinfo!("Successfully retrieved IVI layout API");
+    api_ptr as *const ffi::bindings::ivi_layout_interface
 }
 
 /// Plugin cleanup function called by Weston

@@ -88,8 +88,9 @@ weston-ivi-controller/
 
 **Key Components**:
 
-- `plugin_init()`: Entry point called by Weston when loading the plugin
-- `plugin_destroy()`: Cleanup function called when unloading
+- `wet_module_init()`: Entry point called by Weston when loading the plugin
+- `wet_module_destroy()`: Cleanup function called when unloading
+- `get_ivi_layout_api()`: Retrieves the IVI layout API from Weston compositor
 - Weston callback handlers for surface lifecycle events
 
 **Interface**:
@@ -103,7 +104,22 @@ pub extern "C" fn wet_module_init(
 
 #[no_mangle]
 pub extern "C" fn wet_module_destroy(plugin_data: *mut c_void);
+
+unsafe fn get_ivi_layout_api(
+    compositor: *mut weston_compositor
+) -> *const ivi_layout_interface;
 ```
+
+**IVI Layout API Retrieval**:
+
+The IVI layout API is retrieved from the Weston compositor using the plugin API mechanism. The process involves:
+
+1. **API Name Definition**: Define the IVI layout API name constant (`IVI_LAYOUT_API_NAME = "ivi_layout_api_v1"`)
+2. **API Retrieval**: Call `weston_plugin_api_get()` with the compositor pointer, API name, and interface size
+3. **Validation**: Verify the returned pointer is non-null before use
+4. **Error Handling**: Return initialization error if API is unavailable
+
+The IVI layout API must be retrieved during plugin initialization before any IVI operations can be performed. If the API is not available (e.g., IVI shell not loaded), the plugin initialization must fail gracefully.
 
 ### 2. IVI Interface Wrapper
 

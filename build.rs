@@ -3,30 +3,42 @@ use std::fs;
 use std::path::PathBuf;
 
 fn main() {
-    println!("cargo:rerun-if-changed=ivi-shell/ivi-layout-export.h");
+    println!("cargo:rerun-if-changed=weston/ivi-shell/ivi-layout-export.h");
+    println!("cargo:rerun-if-changed=weston/libweston/plugin-registry.h");
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     let bindings_path = out_path.join("ivi_bindings.rs");
+    let weston_bindings_path = out_path.join("weston_bindings.rs");
 
-    // Try to generate bindings, but if it fails (e.g., missing Weston headers),
-    // create a stub file to allow compilation to proceed
-    let result = bindgen::Builder::default()
-        .header("ivi-shell/ivi-layout-export.h")
+    // Generate IVI layout bindings
+    let ivi_result = bindgen::Builder::default()
+        .header("weston/ivi-shell/ivi-layout-export.h")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .allowlist_type("ivi_layout_.*")
         .allowlist_function("ivi_layout_.*")
         .allowlist_var("IVI_.*")
+        .allowlist_type("wl_.*")
+        .allowlist_type("weston_.*")
         .generate();
 
-    match result {
+    // Generate Weston plugin API bindings
+    let weston_result = bindgen::Builder::default()
+        .header("weston/libweston/plugin-registry.h")
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+        .allowlist_function("weston_plugin_api_.*")
+        .allowlist_type("weston_compositor")
+        .generate();
+
+    // Handle IVI bindings
+    match ivi_result {
         Ok(bindings) => {
             bindings
                 .write_to_file(&bindings_path)
-                .expect("Couldn't write bindings!");
+                .expect("Couldn't write IVI bindings!");
         }
         Err(e) => {
-            eprintln!("Warning: Failed to generate bindings: {}", e);
-            eprintln!("Creating stub bindings file for development");
+            eprintln!("Warning: Failed to generate IVI bindings: {}", e);
+            eprintln!("Creating stub IVI bindings file for development");
 
             // Create a more complete stub file that matches the IVI layout interface
             let stub = r#"
@@ -175,7 +187,40 @@ pub struct ivi_layout_interface {
 pub const IVI_SUCCEEDED: i32 = 0;
 pub const IVI_FAILED: i32 = -1;
 "#;
-            fs::write(&bindings_path, stub).expect("Couldn't write stub bindings!");
+            fs::write(&bindings_path, stub).expect("Couldn't write stub IVI bindings!");
+        }
+    }
+
+    // Handle Weston plugin API bindings
+    match weston_result {
+        Ok(bindings) => {
+            bindings
+                .write_to_file(&weston_bindings_path)
+                .expect("Couldn't write Weston bindings!");
+        }
+        Err(e) => {
+            eprintln!("Warning: Failed to generate Weston bindings: {}", e);
+            eprintln!("Creating stub Weston bindings file for development");
+
+            let stub = r#"
+// Stub Weston bindings - actual bindings require Weston headers
+
+use libc::{c_char, c_void};
+
+#[repr(C)]
+pub struct weston_compositor {
+    _unused: [u8; 0],
+}
+
+extern "C" {
+    pub fn weston_plugin_api_get(
+        compositor: *mut weston_compositor,
+        api_name: *const c_char,
+        version: usize,
+    ) -> *const c_void;
+}
+"#;
+            fs::write(&weston_bindings_path, stub).expect("Couldn't write stub Weston bindings!");
         }
     }
 }

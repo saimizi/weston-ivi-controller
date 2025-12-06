@@ -183,15 +183,23 @@
 - [x] 9. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [x] 10. Implement Weston plugin interface
-- [x] 10.1 Create FFI plugin entry points
+- [ ] 10. Implement Weston plugin interface
+- [x] 10.1 Implement IVI layout API retrieval
+  - Add FFI bindings for weston_plugin_api_get function
+  - Define IVI_LAYOUT_API_NAME constant
+  - Implement get_ivi_layout_api() to call weston_plugin_api_get
+  - Add null pointer validation
+  - Add error handling for missing IVI shell
+  - _Requirements: 1.3, 1.4_
+
+- [x] 10.2 Create FFI plugin entry points
   - Implement wet_module_init function
   - Implement wet_module_destroy function
   - Handle plugin initialization arguments
-  - Retrieve IVI layout API from Weston compositor
+  - Use compositor pointer to retrieve IVI layout API
   - _Requirements: 1.3, 1.4_
 
-- [x] 10.2 Wire components together in plugin initialization
+- [x] 10.3 Wire components together in plugin initialization
   - Create IviLayoutApi wrapper
   - Create StateManager
   - Create RPC handler
@@ -200,13 +208,13 @@
   - Start transport
   - _Requirements: 1.3, 10.2_
 
-- [x] 10.3 Implement plugin cleanup
+- [x] 10.4 Implement plugin cleanup
   - Stop transport
   - Clean up all resources
   - Unregister event listeners
   - _Requirements: 1.5_
 
-- [ ]* 10.4 Write unit test for plugin initialization
+- [ ]* 10.5 Write unit test for plugin initialization
   - Test that plugin initializes without errors
   - _Requirements: 1.3_
 

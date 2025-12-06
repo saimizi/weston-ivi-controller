@@ -5,7 +5,7 @@ use super::transport::{ClientId, MessageHandler, Transport, TransportError};
 use crate::controller::state::{StateManager, SurfaceState};
 use crate::controller::validation;
 #[allow(unused)]
-use jlogger_tracing::{jtrace,jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
+use jlogger_tracing::{jdebug, jerror, jinfo, jtrace, jwarn, JloggerBuilder, LevelFilter};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 

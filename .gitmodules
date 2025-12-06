@@ -1,0 +1,4 @@
+[submodule "weston"]
+	path = weston
+	url = https://gitlab.freedesktop.org/wayland/weston.git
+	branch = 13.0
