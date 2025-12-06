@@ -57,12 +57,13 @@
 pub mod controller;
 pub mod error;
 pub mod ffi;
-pub mod logging;
 pub mod rpc;
 pub mod transport;
 
 // Re-export commonly used types
 pub use error::{ControllerError, ControllerResult};
+#[allow(unused)]
+use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
 
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_void};
@@ -109,11 +110,11 @@ pub extern "C" fn wet_module_init(
             state_ptr as c_int
         }
         Ok(Err(e)) => {
-            eprintln!("Plugin initialization failed: {}", e);
+            jerror!("Plugin initialization failed: {}", e);
             -1
         }
         Err(_) => {
-            eprintln!("Plugin initialization panicked");
+            jerror!("Plugin initialization panicked");
             -1
         }
     }
@@ -127,19 +128,19 @@ pub extern "C" fn wet_module_init(
 /// - Calls FFI functions
 /// - Assumes the IVI layout API pointer is valid
 unsafe fn plugin_init_impl(argc: c_int, argv: *const *const c_char) -> Result<PluginState, String> {
-    // Initialize logging system
-    if let Err(e) = logging::init_logging() {
-        eprintln!("Warning: Failed to initialize logging: {}", e);
-        eprintln!("Continuing with fallback logging...");
-    }
+    JloggerBuilder::new()
+        .log_console(true)
+        .log_file(Some(("/tmp/weston-ivi-controller.log", false)))
+        .max_level(LevelFilter::DEBUG)
+        .build();
 
-    tracing::info!("Weston IVI Controller plugin initializing...");
+    jinfo!("Weston IVI Controller plugin initializing...");
 
     // Parse command-line arguments
     let socket_path = parse_socket_path(argc, argv)
         .unwrap_or_else(|| PathBuf::from("/tmp/weston-ivi-controller.sock"));
 
-    tracing::info!("Using socket path: {:?}", socket_path);
+    jinfo!("Using socket path: {:?}", socket_path);
 
     // Retrieve the IVI layout API from Weston
     // Note: In a real implementation, this would be obtained from the compositor
@@ -148,6 +149,7 @@ unsafe fn plugin_init_impl(argc: c_int, argv: *const *const c_char) -> Result<Pl
     let ivi_api_ptr = get_ivi_layout_api();
 
     if ivi_api_ptr.is_null() {
+        jerror!("Failed to retrieve IVI layout API from compositor");
         return Err("Failed to retrieve IVI layout API from compositor".to_string());
     }
 
@@ -156,7 +158,7 @@ unsafe fn plugin_init_impl(argc: c_int, argv: *const *const c_char) -> Result<Pl
 
     let ivi_api = Arc::new(ivi_api);
 
-    tracing::info!("IVI layout API retrieved successfully");
+    jinfo!("IVI layout API retrieved successfully");
 
     // Create state manager
     let mut state_manager = StateManager::new(Arc::clone(&ivi_api));
@@ -166,12 +168,12 @@ unsafe fn plugin_init_impl(argc: c_int, argv: *const *const c_char) -> Result<Pl
 
     let state_manager = Arc::new(Mutex::new(state_manager));
 
-    tracing::info!("State manager created");
+    jinfo!("State manager created");
 
     // Create RPC handler
     let rpc_handler = RpcHandler::new(Arc::clone(&state_manager));
 
-    tracing::info!("RPC handler created");
+    jinfo!("RPC handler created");
 
     // Create and register UNIX socket transport
     let transport_config = UnixSocketConfig {
@@ -182,30 +184,30 @@ unsafe fn plugin_init_impl(argc: c_int, argv: *const *const c_char) -> Result<Pl
     let transport = Box::new(UnixSocketTransport::new(transport_config));
 
     rpc_handler.register_transport(transport).map_err(|e| {
-        tracing::error!("Failed to register transport: {:?}", e);
+        jerror!("Failed to register transport: {:?}", e);
         format!("Failed to register transport: {:?}", e)
     })?;
 
-    tracing::info!("Transport registered");
+    jinfo!("Transport registered");
 
     // Register IVI event listeners
     let event_context = Arc::new(EventContext::new(Arc::clone(&state_manager), ivi_api_ptr));
 
     let event_listeners = event_context.register_listeners(ivi_api_ptr).map_err(|e| {
-        tracing::error!("Failed to register event listeners: {}", e);
+        jerror!("Failed to register event listeners: {}", e);
         format!("Failed to register event listeners: {}", e)
     })?;
 
-    tracing::info!("Event listeners registered");
+    jinfo!("Event listeners registered");
 
     // Start the transport
     rpc_handler.start_transport().map_err(|e| {
-        tracing::error!("Failed to start transport: {:?}", e);
+        jerror!("Failed to start transport: {:?}", e);
         format!("Failed to start transport: {:?}", e)
     })?;
 
-    tracing::info!("Transport started");
-    tracing::info!("Weston IVI Controller plugin initialized successfully");
+    jinfo!("Transport started");
+    jinfo!("Weston IVI Controller plugin initialized successfully");
 
     Ok(PluginState {
         state_manager,
@@ -273,7 +275,7 @@ pub extern "C" fn wet_module_destroy(plugin_data: *mut c_void) {
     let result = panic::catch_unwind(|| unsafe { plugin_destroy_impl(plugin_data) });
 
     if let Err(_) = result {
-        eprintln!("Plugin cleanup panicked");
+        jerror!("Plugin cleanup panicked");
     }
 }
 
@@ -288,22 +290,22 @@ unsafe fn plugin_destroy_impl(plugin_data: *mut c_void) {
         return;
     }
 
-    tracing::info!("Weston IVI Controller plugin shutting down...");
+    jinfo!("Weston IVI Controller plugin shutting down...");
 
     // Reconstruct the Box from the raw pointer
     let state = Box::from_raw(plugin_data as *mut PluginState);
 
     // Stop the transport
     if let Err(e) = state.rpc_handler.stop_transport() {
-        tracing::error!("Error stopping transport: {:?}", e);
+        jerror!("Error stopping transport: {:?}", e);
     } else {
-        tracing::info!("Transport stopped");
+        jinfo!("Transport stopped");
     }
 
     // Event listeners will be cleaned up automatically when dropped
     drop(state.event_listeners);
-    tracing::info!("Event listeners unregistered");
+    jinfo!("Event listeners unregistered");
 
     // State manager and RPC handler will be cleaned up automatically
-    tracing::info!("Weston IVI Controller plugin shut down successfully");
+    jinfo!("Weston IVI Controller plugin shut down successfully");
 }

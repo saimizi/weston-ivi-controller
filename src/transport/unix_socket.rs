@@ -1,5 +1,7 @@
 // UNIX domain socket transport implementation
 
+#[allow(unused)]
+use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -66,7 +68,7 @@ impl UnixSocketTransport {
                 let client_id = state_lock.next_client_id;
                 state_lock.next_client_id += 1;
 
-                tracing::info!("New client connected: {}", client_id);
+                jinfo!("New client connected: {}", client_id);
 
                 state_lock.clients.insert(
                     client_id,
@@ -81,7 +83,7 @@ impl UnixSocketTransport {
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(()),
             Err(e) => {
-                tracing::error!("Error accepting connection: {}", e);
+                jerror!("Error accepting connection: {}", e);
                 Err(e)
             }
         }
@@ -185,7 +187,7 @@ impl UnixSocketTransport {
                 let mut state_lock = state.lock().unwrap();
 
                 for client_id in disconnected_clients {
-                    tracing::info!("Client {} disconnected, cleaning up", client_id);
+                    jinfo!("Client {} disconnected, cleaning up", client_id);
                     state_lock.clients.remove(&client_id);
 
                     if let Some(ref handler) = state_lock.handler {
@@ -202,23 +204,23 @@ impl UnixSocketTransport {
 
 impl Transport for UnixSocketTransport {
     fn start(&mut self) -> Result<(), TransportError> {
-        tracing::info!(
+        jinfo!(
             "Starting UNIX socket transport at {:?}",
             self.config.socket_path
         );
 
         // Remove existing socket file if it exists
         if self.config.socket_path.exists() {
-            tracing::debug!("Removing existing socket file");
+            jdebug!("Removing existing socket file");
             std::fs::remove_file(&self.config.socket_path).map_err(|e| {
-                tracing::error!("Failed to remove existing socket: {}", e);
+                jerror!("Failed to remove existing socket: {}", e);
                 TransportError::InitError(format!("Failed to remove existing socket: {}", e))
             })?;
         }
 
         // Create the UNIX domain socket
         let listener = UnixListener::bind(&self.config.socket_path).map_err(|e| {
-            tracing::error!("Failed to bind socket: {}", e);
+            jerror!("Failed to bind socket: {}", e);
             TransportError::InitError(format!("Failed to bind socket: {}", e))
         })?;
 
@@ -236,12 +238,12 @@ impl Transport for UnixSocketTransport {
 
         self.listener_thread = Some(handle);
 
-        tracing::info!("UNIX socket transport started successfully");
+        jinfo!("UNIX socket transport started successfully");
         Ok(())
     }
 
     fn stop(&mut self) -> Result<(), TransportError> {
-        tracing::info!("Stopping UNIX socket transport");
+        jinfo!("Stopping UNIX socket transport");
 
         // Signal the thread to stop
         {
@@ -252,21 +254,21 @@ impl Transport for UnixSocketTransport {
         // Wait for the thread to finish
         if let Some(handle) = self.listener_thread.take() {
             handle.join().map_err(|_| {
-                tracing::error!("Failed to join listener thread");
+                jerror!("Failed to join listener thread");
                 TransportError::ConnectionError("Failed to join listener thread".to_string())
             })?;
         }
 
         // Clean up the socket file
         if self.config.socket_path.exists() {
-            tracing::debug!("Removing socket file");
+            jdebug!("Removing socket file");
             std::fs::remove_file(&self.config.socket_path).map_err(|e| {
-                tracing::error!("Failed to remove socket: {}", e);
+                jerror!("Failed to remove socket: {}", e);
                 TransportError::ConnectionError(format!("Failed to remove socket: {}", e))
             })?;
         }
 
-        tracing::info!("UNIX socket transport stopped successfully");
+        jinfo!("UNIX socket transport stopped successfully");
 
         Ok(())
     }

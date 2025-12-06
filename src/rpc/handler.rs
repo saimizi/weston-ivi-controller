@@ -4,6 +4,8 @@ use super::protocol::{RpcError, RpcMethod, RpcRequest, RpcResponse};
 use super::transport::{ClientId, MessageHandler, Transport, TransportError};
 use crate::controller::state::{StateManager, SurfaceState};
 use crate::controller::validation;
+#[allow(unused)]
+use jlogger_tracing::{jtrace,jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
@@ -66,7 +68,7 @@ impl RpcHandler {
 
     /// Handle an RPC request
     pub fn handle_request(&self, request: RpcRequest) -> RpcResponse {
-        tracing::debug!(
+        jdebug!(
             "Handling RPC request: method={}, id={}",
             request.method,
             request.id
@@ -76,7 +78,7 @@ impl RpcHandler {
         let method = match RpcMethod::from_request(&request) {
             Ok(m) => m,
             Err(e) => {
-                tracing::warn!("Invalid RPC method: {}, error: {}", request.method, e);
+                jwarn!("Invalid RPC method: {}, error: {}", request.method, e);
                 return RpcResponse::error(request.id, e);
             }
         };
@@ -115,11 +117,11 @@ impl RpcHandler {
         // Generate response
         match result {
             Ok(value) => {
-                tracing::debug!("RPC request successful: id={}", request.id);
+                jdebug!("RPC request successful: id={}", request.id);
                 RpcResponse::success(request.id, value)
             }
             Err(error) => {
-                tracing::error!("RPC request failed: id={}, error: {}", request.id, error);
+                jerror!("RPC request failed: id={}, error: {}", request.id, error);
                 RpcResponse::error(request.id, error)
             }
         }
@@ -142,11 +144,11 @@ impl RpcHandler {
 
         match state_manager.get_surface(id) {
             Some(surface) => {
-                tracing::debug!("Retrieved surface {}", id);
+                jdebug!("Retrieved surface {}", id);
                 Ok(surface_state_to_json(&surface))
             }
             None => {
-                tracing::warn!("Surface not found: {}", id);
+                jwarn!("Surface not found: {}", id);
                 Err(RpcError::surface_not_found(id))
             }
         }
@@ -160,7 +162,7 @@ impl RpcHandler {
         y: i32,
         auto_commit: bool,
     ) -> Result<serde_json::Value, RpcError> {
-        tracing::debug!(
+        jdebug!(
             "Setting position for surface {}: ({}, {}) [auto_commit={}]",
             id,
             x,
@@ -170,7 +172,7 @@ impl RpcHandler {
 
         // Validate position
         validation::validate_position(x, y).map_err(|e| {
-            tracing::warn!("Invalid position for surface {}: {}", id, e);
+            jwarn!("Invalid position for surface {}: {}", id, e);
             RpcError::invalid_params(e.to_string())
         })?;
 
@@ -178,7 +180,7 @@ impl RpcHandler {
 
         // Check if surface exists
         if !state_manager.has_surface(id) {
-            tracing::warn!("Surface not found: {}", id);
+            jwarn!("Surface not found: {}", id);
             return Err(RpcError::surface_not_found(id));
         }
 
@@ -216,7 +218,7 @@ impl RpcHandler {
         height: i32,
         auto_commit: bool,
     ) -> Result<serde_json::Value, RpcError> {
-        tracing::debug!(
+        jdebug!(
             "Setting size for surface {}: {}x{} [auto_commit={}]",
             id,
             width,
@@ -440,7 +442,7 @@ impl RpcHandler {
 
     /// Handle set_focus request
     fn handle_set_focus(&self, id: u32, auto_commit: bool) -> Result<serde_json::Value, RpcError> {
-        tracing::debug!(
+        jdebug!(
             "Setting focus for surface {} [auto_commit={}]",
             id,
             auto_commit
@@ -450,7 +452,7 @@ impl RpcHandler {
 
         // Check if surface exists
         if !state_manager.has_surface(id) {
-            tracing::warn!("Surface not found: {}", id);
+            jwarn!("Surface not found: {}", id);
             return Err(RpcError::surface_not_found(id));
         }
 
@@ -479,9 +481,9 @@ impl RpcHandler {
             ivi_api
                 .commit_changes()
                 .map_err(|e| RpcError::internal_error(e.to_string()))?;
-            tracing::info!("Focus set to surface {} and committed", id);
+            jinfo!("Focus set to surface {} and committed", id);
         } else {
-            tracing::info!("Focus set to surface {} (pending commit)", id);
+            jinfo!("Focus set to surface {} (pending commit)", id);
         }
 
         Ok(json!({ "success": true, "committed": auto_commit }))
@@ -489,7 +491,7 @@ impl RpcHandler {
 
     /// Handle commit request - commits all pending changes
     fn handle_commit(&self) -> Result<serde_json::Value, RpcError> {
-        tracing::debug!("Committing all pending changes");
+        jdebug!("Committing all pending changes");
 
         let state_manager = self.state_manager.lock().unwrap();
         let ivi_api = state_manager.ivi_api().clone();
@@ -500,7 +502,7 @@ impl RpcHandler {
             .commit_changes()
             .map_err(|e| RpcError::internal_error(e.to_string()))?;
 
-        tracing::info!("All pending changes committed");
+        jinfo!("All pending changes committed");
 
         Ok(json!({ "success": true }))
     }
@@ -532,7 +534,7 @@ struct RpcMessageHandler {
 
 impl MessageHandler for RpcMessageHandler {
     fn handle_message(&self, client_id: ClientId, data: &[u8]) {
-        tracing::trace!("Received message from client {}", client_id);
+        jtrace!("Received message from client {}", client_id);
 
         // Parse the incoming message as an RPC request
         let request = match RpcRequest::from_json(data) {
@@ -540,7 +542,7 @@ impl MessageHandler for RpcMessageHandler {
             Err(e) => {
                 // If we can't parse the request, we can't send a proper response
                 // because we don't have a request ID
-                tracing::error!(
+                jerror!(
                     "Failed to parse RPC request from client {}: {:?}",
                     client_id,
                     e
@@ -556,7 +558,7 @@ impl MessageHandler for RpcMessageHandler {
         let response_data = match response.to_json() {
             Ok(data) => data,
             Err(e) => {
-                tracing::error!(
+                jerror!(
                     "Failed to serialize RPC response for client {}: {:?}",
                     client_id,
                     e
@@ -569,7 +571,7 @@ impl MessageHandler for RpcMessageHandler {
         let transport_lock = self.rpc_handler.transport.lock().unwrap();
         if let Some(transport) = transport_lock.as_ref() {
             if let Err(e) = transport.send(client_id, &response_data) {
-                tracing::error!(
+                jerror!(
                     "Failed to send RPC response to client {}: {:?}",
                     client_id,
                     e
@@ -580,7 +582,7 @@ impl MessageHandler for RpcMessageHandler {
 
     fn handle_disconnect(&self, client_id: ClientId) {
         // Log the disconnection
-        tracing::info!("Client {} disconnected", client_id);
+        jinfo!("Client {} disconnected", client_id);
         // No cleanup needed for now, but this is where we could
         // clean up any per-client state if needed
     }

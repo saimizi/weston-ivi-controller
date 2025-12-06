@@ -1,6 +1,8 @@
 // State management for IVI surfaces
 
 use super::ivi_wrapper::{IviLayoutApi, Orientation as IviOrientation};
+#[allow(unused)]
+use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -97,7 +99,7 @@ impl StateManager {
     /// Add a surface to the state manager
     /// This is called when a new surface is created
     pub fn add_surface(&mut self, id: u32, state: SurfaceState) {
-        tracing::info!("Adding surface {} to state manager", id);
+        jinfo!("Adding surface {} to state manager", id);
         let mut surfaces = self.surfaces.lock().unwrap();
         surfaces.insert(id, state);
     }
@@ -105,7 +107,7 @@ impl StateManager {
     /// Remove a surface from the state manager
     /// This is called when a surface is destroyed
     pub fn remove_surface(&mut self, id: u32) -> Option<SurfaceState> {
-        tracing::info!("Removing surface {} from state manager", id);
+        jinfo!("Removing surface {} from state manager", id);
         let mut surfaces = self.surfaces.lock().unwrap();
         surfaces.remove(&id)
     }
@@ -113,7 +115,7 @@ impl StateManager {
     /// Update surface state
     /// This is called when surface properties change
     pub fn update_surface(&mut self, id: u32, state: SurfaceState) {
-        tracing::debug!("Updating surface {} state", id);
+        jdebug!("Updating surface {} state", id);
         let mut surfaces = self.surfaces.lock().unwrap();
         surfaces.insert(id, state);
     }

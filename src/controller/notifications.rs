@@ -1,5 +1,7 @@
 // Notification system for surface and focus changes
 
+#[allow(unused)]
+use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -109,7 +111,7 @@ impl NotificationManager {
             }),
         };
 
-        tracing::debug!(
+        jdebug!(
             "Geometry change notification for surface {}: pos ({},{}) -> ({},{}), size ({},{}) -> ({},{})",
             surface_id,
             old_position.0, old_position.1,
@@ -131,7 +133,7 @@ impl NotificationManager {
             }),
         };
 
-        tracing::info!(
+        jinfo!(
             "Focus change notification: {:?} -> {:?}",
             old_focused,
             new_focused
@@ -147,7 +149,7 @@ impl NotificationManager {
             data: NotificationData::SurfaceCreated { surface_id },
         };
 
-        tracing::info!("Surface created notification for surface {}", surface_id);
+        jinfo!("Surface created notification for surface {}", surface_id);
 
         self.emit(notification);
     }
@@ -159,7 +161,7 @@ impl NotificationManager {
             data: NotificationData::SurfaceDestroyed { surface_id },
         };
 
-        tracing::info!("Surface destroyed notification for surface {}", surface_id);
+        jinfo!("Surface destroyed notification for surface {}", surface_id);
 
         self.emit(notification);
     }
