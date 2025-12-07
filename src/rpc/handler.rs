@@ -1,18 +1,22 @@
 // RPC request handler
 
-use super::protocol::{RpcError, RpcMethod, RpcRequest, RpcResponse};
+use super::protocol::{EventType, RpcError, RpcMethod, RpcRequest, RpcResponse};
 use super::transport::{ClientId, MessageHandler, Transport, TransportError};
 use crate::controller::state::{StateManager, SurfaceState};
+use crate::controller::subscriptions::SubscriptionManager;
 use crate::controller::validation;
 #[allow(unused)]
 use jlogger_tracing::{jdebug, jerror, jinfo, jtrace, jwarn, JloggerBuilder, LevelFilter};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 /// Handles RPC requests and generates responses
 pub struct RpcHandler {
     state_manager: Arc<Mutex<StateManager>>,
     transport: Arc<Mutex<Option<Box<dyn Transport>>>>,
+    subscription_manager: Arc<Mutex<SubscriptionManager>>,
 }
 
 impl RpcHandler {
@@ -21,7 +25,13 @@ impl RpcHandler {
         Arc::new(Self {
             state_manager,
             transport: Arc::new(Mutex::new(None)),
+            subscription_manager: Arc::new(Mutex::new(SubscriptionManager::new())),
         })
+    }
+
+    /// Get a reference to the subscription manager (for testing and integration)
+    pub fn subscription_manager(&self) -> Arc<Mutex<SubscriptionManager>> {
+        Arc::clone(&self.subscription_manager)
     }
 
     /// Register a transport implementation
@@ -66,10 +76,83 @@ impl RpcHandler {
         }
     }
 
+    /// Start the notification delivery loop in a background thread
+    /// This should be called after register_transport() and start_transport()
+    pub fn start_notification_delivery(self: &Arc<Self>) {
+        let subscription_manager = Arc::clone(&self.subscription_manager);
+        let transport = Arc::clone(&self.transport);
+
+        jinfo!("Starting notification delivery loop");
+
+        thread::spawn(move || {
+            loop {
+                // Small sleep to avoid busy-waiting
+                thread::sleep(Duration::from_millis(10));
+
+                // Get connected clients
+                let transport_lock = transport.lock().unwrap();
+                if let Some(ref t) = *transport_lock {
+                    let clients = t.get_connected_clients();
+                    drop(transport_lock);
+
+                    // Drain and send notifications for each client
+                    for client_id in clients {
+                        let notifications = subscription_manager
+                            .lock()
+                            .unwrap()
+                            .drain_notifications(client_id);
+
+                        if notifications.is_empty() {
+                            continue;
+                        }
+
+                        jtrace!(
+                            "Sending {} notifications to client {}",
+                            notifications.len(),
+                            client_id
+                        );
+
+                        for notification in notifications {
+                            // Serialize notification to JSON
+                            match serde_json::to_vec(&notification) {
+                                Ok(mut json) => {
+                                    // Add newline delimiter
+                                    json.push(b'\n');
+
+                                    // Send to client
+                                    let transport_lock = transport.lock().unwrap();
+                                    if let Some(ref t) = *transport_lock {
+                                        if let Err(e) = t.send(client_id, &json) {
+                                            jwarn!(
+                                                "Failed to send notification to client {}: {:?}",
+                                                client_id,
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    jerror!(
+                                        "Failed to serialize notification for client {}: {:?}",
+                                        client_id,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        jinfo!("Notification delivery loop started");
+    }
+
     /// Handle an RPC request
-    pub fn handle_request(&self, request: RpcRequest) -> RpcResponse {
+    pub fn handle_request(&self, client_id: ClientId, request: RpcRequest) -> RpcResponse {
         jdebug!(
-            "Handling RPC request: method={}, id={}",
+            "Handling RPC request from client {}: method={}, id={}",
+            client_id,
             request.method,
             request.id
         );
@@ -112,6 +195,23 @@ impl RpcHandler {
             }
             RpcMethod::SetFocus { id } => self.handle_set_focus(id, auto_commit),
             RpcMethod::Commit => self.handle_commit(),
+
+            // Subscription methods
+            RpcMethod::Subscribe { event_types } => self.handle_subscribe(client_id, event_types),
+            RpcMethod::Unsubscribe { event_types } => {
+                self.handle_unsubscribe(client_id, event_types)
+            }
+            RpcMethod::ListSubscriptions => self.handle_list_subscriptions(client_id),
+
+            // Layer methods
+            RpcMethod::ListLayers => self.handle_list_layers(),
+            RpcMethod::GetLayer { id } => self.handle_get_layer(id),
+            RpcMethod::SetLayerVisibility { id, visible } => {
+                self.handle_set_layer_visibility(id, visible, auto_commit)
+            }
+            RpcMethod::SetLayerOpacity { id, opacity } => {
+                self.handle_set_layer_opacity(id, opacity, auto_commit)
+            }
         };
 
         // Generate response
@@ -349,8 +449,8 @@ impl RpcHandler {
     fn handle_set_orientation(
         &self,
         id: u32,
-        orientation: crate::controller::state::Orientation,
-        auto_commit: bool,
+        _orientation: crate::controller::state::Orientation,
+        _auto_commit: bool,
     ) -> Result<serde_json::Value, RpcError> {
         let state_manager = self.state_manager.lock().unwrap();
 
@@ -359,38 +459,11 @@ impl RpcHandler {
             return Err(RpcError::surface_not_found(id));
         }
 
-        // Get the IVI API and update the surface
-        let ivi_api = state_manager.ivi_api().clone();
-        drop(state_manager); // Release lock before calling IVI API
-
-        let mut surface = ivi_api
-            .get_surface_from_id(id)
-            .ok_or_else(|| RpcError::internal_error(format!("Failed to get IVI surface {}", id)))?;
-
-        // Convert orientation to degrees
-        let degrees = match orientation {
-            crate::controller::state::Orientation::Normal => 0,
-            crate::controller::state::Orientation::Rotate90 => 90,
-            crate::controller::state::Orientation::Rotate180 => 180,
-            crate::controller::state::Orientation::Rotate270 => 270,
-        };
-
-        surface
-            .set_orientation(degrees)
-            .map_err(|e| RpcError::internal_error(e))?;
-
-        // Commit changes only if auto_commit is true
-        if auto_commit {
-            ivi_api
-                .commit_changes()
-                .map_err(|e| RpcError::internal_error(e.to_string()))?;
-
-            // Update internal state
-            let mut state_manager = self.state_manager.lock().unwrap();
-            state_manager.handle_surface_configured(id);
-        }
-
-        Ok(json!({ "success": true, "committed": auto_commit }))
+        // Orientation control is not supported by current IVI API
+        drop(state_manager);
+        Err(RpcError::internal_error(
+            "Orientation control not supported by current IVI API".to_string(),
+        ))
     }
 
     /// Handle set_z_order request
@@ -429,11 +502,21 @@ impl RpcHandler {
                 .commit_changes()
                 .map_err(|e| RpcError::internal_error(e.to_string()))?;
 
-            // Update internal state
+            // Update internal state and emit notification
+            // Capture old z-order first
             let mut state_manager = self.state_manager.lock().unwrap();
+            let old_z = state_manager.get_surface(id).map(|s| s.z_order);
             if let Some(mut surface_state) = state_manager.get_surface(id) {
                 surface_state.z_order = z_order;
                 state_manager.update_surface(id, surface_state);
+            }
+
+            // Emit z-order change if we have an old value
+            if let Some(old_z_order) = old_z {
+                let nm = state_manager.notification_manager().clone();
+                drop(state_manager);
+                let nm = nm.lock().unwrap();
+                nm.emit_z_order_change(id, old_z_order, z_order);
             }
         }
 
@@ -506,6 +589,222 @@ impl RpcHandler {
 
         Ok(json!({ "success": true }))
     }
+
+    /// Handle subscribe request - subscribe to event types
+    fn handle_subscribe(
+        &self,
+        client_id: ClientId,
+        event_types: Vec<EventType>,
+    ) -> Result<serde_json::Value, RpcError> {
+        jinfo!(
+            "Client {} subscribing to {} event types",
+            client_id,
+            event_types.len()
+        );
+
+        let subscription_manager = self.subscription_manager.lock().unwrap();
+        let subscribed = subscription_manager
+            .subscribe(client_id, event_types)
+            .map_err(|e| RpcError::internal_error(e))?;
+
+        jinfo!(
+            "Client {} successfully subscribed to {} event types",
+            client_id,
+            subscribed.len()
+        );
+
+        Ok(json!({
+            "success": true,
+            "subscribed": subscribed
+        }))
+    }
+
+    /// Handle unsubscribe request - unsubscribe from event types
+    fn handle_unsubscribe(
+        &self,
+        client_id: ClientId,
+        event_types: Vec<EventType>,
+    ) -> Result<serde_json::Value, RpcError> {
+        jinfo!(
+            "Client {} unsubscribing from {} event types",
+            client_id,
+            event_types.len()
+        );
+
+        let subscription_manager = self.subscription_manager.lock().unwrap();
+        let unsubscribed = subscription_manager
+            .unsubscribe(client_id, event_types)
+            .map_err(|e| RpcError::internal_error(e))?;
+
+        jinfo!(
+            "Client {} successfully unsubscribed from {} event types",
+            client_id,
+            unsubscribed.len()
+        );
+
+        Ok(json!({
+            "success": true,
+            "unsubscribed": unsubscribed
+        }))
+    }
+
+    /// Handle list_subscriptions request - list all active subscriptions for a client
+    fn handle_list_subscriptions(
+        &self,
+        client_id: ClientId,
+    ) -> Result<serde_json::Value, RpcError> {
+        jdebug!("Listing subscriptions for client {}", client_id);
+
+        let subscription_manager = self.subscription_manager.lock().unwrap();
+        let subscriptions = subscription_manager.get_subscriptions(client_id);
+
+        jdebug!(
+            "Client {} has {} active subscriptions",
+            client_id,
+            subscriptions.len()
+        );
+
+        Ok(json!({
+            "subscriptions": subscriptions
+        }))
+    }
+
+    /// Handle list_layers request
+    fn handle_list_layers(&self) -> Result<serde_json::Value, RpcError> {
+        let state_manager = self.state_manager.lock().unwrap();
+        let layers = state_manager.get_all_layers();
+
+        let layer_list: Vec<serde_json::Value> = layers
+            .iter()
+            .map(|layer| {
+                json!({
+                    "id": layer.id,
+                    "visibility": layer.visibility,
+                    "opacity": layer.opacity,
+                })
+            })
+            .collect();
+
+        Ok(json!({ "layers": layer_list }))
+    }
+
+    /// Handle get_layer request
+    fn handle_get_layer(&self, id: u32) -> Result<serde_json::Value, RpcError> {
+        let state_manager = self.state_manager.lock().unwrap();
+
+        match state_manager.get_layer(id) {
+            Some(layer) => {
+                jdebug!("Retrieved layer {}", id);
+                Ok(json!({
+                    "id": layer.id,
+                    "visibility": layer.visibility,
+                    "opacity": layer.opacity,
+                }))
+            }
+            None => {
+                jwarn!("Layer not found: {}", id);
+                Err(RpcError::invalid_params(format!("Layer {} not found", id)))
+            }
+        }
+    }
+
+    /// Handle set_layer_visibility request
+    fn handle_set_layer_visibility(
+        &self,
+        id: u32,
+        visible: bool,
+        auto_commit: bool,
+    ) -> Result<serde_json::Value, RpcError> {
+        jdebug!(
+            "Setting layer {} visibility to {} [auto_commit={}]",
+            id,
+            visible,
+            auto_commit
+        );
+
+        let state_manager = self.state_manager.lock().unwrap();
+
+        // Check if layer exists
+        if !state_manager.has_layer(id) {
+            jwarn!("Layer not found: {}", id);
+            return Err(RpcError::invalid_params(format!("Layer {} not found", id)));
+        }
+
+        // Get the IVI API and update the layer
+        let ivi_api = state_manager.ivi_api().clone();
+        drop(state_manager); // Release lock before calling IVI API
+
+        let mut layer = ivi_api
+            .get_layer_from_id(id)
+            .ok_or_else(|| RpcError::internal_error(format!("Failed to get IVI layer {}", id)))?;
+
+        layer.set_visibility(visible);
+
+        // Commit changes only if auto_commit is true
+        if auto_commit {
+            ivi_api
+                .commit_changes()
+                .map_err(|e| RpcError::internal_error(e.to_string()))?;
+
+            // Update internal state
+            let mut state_manager = self.state_manager.lock().unwrap();
+            state_manager.handle_layer_configured(id);
+        }
+
+        Ok(json!({ "success": true, "committed": auto_commit }))
+    }
+
+    /// Handle set_layer_opacity request
+    fn handle_set_layer_opacity(
+        &self,
+        id: u32,
+        opacity: f32,
+        auto_commit: bool,
+    ) -> Result<serde_json::Value, RpcError> {
+        // Validate opacity
+        validation::validate_opacity(opacity)
+            .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+
+        jdebug!(
+            "Setting layer {} opacity to {} [auto_commit={}]",
+            id,
+            opacity,
+            auto_commit
+        );
+
+        let state_manager = self.state_manager.lock().unwrap();
+
+        // Check if layer exists
+        if !state_manager.has_layer(id) {
+            jwarn!("Layer not found: {}", id);
+            return Err(RpcError::invalid_params(format!("Layer {} not found", id)));
+        }
+
+        // Get the IVI API and update the layer
+        let ivi_api = state_manager.ivi_api().clone();
+        drop(state_manager); // Release lock before calling IVI API
+
+        let mut layer = ivi_api
+            .get_layer_from_id(id)
+            .ok_or_else(|| RpcError::internal_error(format!("Failed to get IVI layer {}", id)))?;
+
+        layer
+            .set_opacity(opacity)
+            .map_err(|e| RpcError::internal_error(e))?;
+
+        // Commit changes only if auto_commit is true
+        if auto_commit {
+            ivi_api
+                .commit_changes()
+                .map_err(|e| RpcError::internal_error(e.to_string()))?;
+
+            // Update internal state
+            let mut state_manager = self.state_manager.lock().unwrap();
+            state_manager.handle_layer_configured(id);
+        }
+
+        Ok(json!({ "success": true, "committed": auto_commit }))
+    }
 }
 
 /// Convert a SurfaceState to JSON
@@ -552,7 +851,7 @@ impl MessageHandler for RpcMessageHandler {
         };
 
         // Handle the request
-        let response = self.rpc_handler.handle_request(request);
+        let response = self.rpc_handler.handle_request(client_id, request);
 
         // Serialize the response
         let response_data = match response.to_json() {
@@ -583,8 +882,15 @@ impl MessageHandler for RpcMessageHandler {
     fn handle_disconnect(&self, client_id: ClientId) {
         // Log the disconnection
         jinfo!("Client {} disconnected", client_id);
-        // No cleanup needed for now, but this is where we could
-        // clean up any per-client state if needed
+
+        // Clean up subscriptions for this client
+        self.rpc_handler
+            .subscription_manager
+            .lock()
+            .unwrap()
+            .remove_client(client_id);
+
+        jdebug!("Cleaned up subscriptions for client {}", client_id);
     }
 }
 
@@ -641,6 +947,21 @@ mod tests {
             self.last_client_id.store(client_id, Ordering::SeqCst);
             *self.last_message.lock().unwrap() = data.to_vec();
             Ok(())
+        }
+
+        fn send_to_clients(
+            &self,
+            client_ids: &[ClientId],
+            data: &[u8],
+        ) -> Result<(), TransportError> {
+            for &client_id in client_ids {
+                self.send(client_id, data)?;
+            }
+            Ok(())
+        }
+
+        fn get_connected_clients(&self) -> Vec<ClientId> {
+            vec![1]
         }
 
         fn register_handler(&mut self, handler: Box<dyn MessageHandler>) {

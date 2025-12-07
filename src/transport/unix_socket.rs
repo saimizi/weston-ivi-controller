@@ -300,6 +300,39 @@ impl Transport for UnixSocketTransport {
         }
     }
 
+    fn send_to_clients(&self, client_ids: &[ClientId], data: &[u8]) -> Result<(), TransportError> {
+        let mut state = self.state.lock().unwrap();
+        let mut errors = Vec::new();
+
+        for &client_id in client_ids {
+            if let Some(connection) = state.clients.get_mut(&client_id) {
+                // Send data with newline delimiter (best-effort)
+                if let Err(e) = connection.stream.write_all(data) {
+                    errors.push((client_id, e));
+                    continue;
+                }
+                if let Err(e) = connection.stream.write_all(b"\n") {
+                    errors.push((client_id, e));
+                    continue;
+                }
+                let _ = connection.stream.flush();
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            // Log errors but don't fail - best-effort delivery
+            jdebug!("Failed to send to {} clients", errors.len());
+            Ok(())
+        }
+    }
+
+    fn get_connected_clients(&self) -> Vec<ClientId> {
+        let state = self.state.lock().unwrap();
+        state.clients.keys().copied().collect()
+    }
+
     fn register_handler(&mut self, handler: Box<dyn MessageHandler>) {
         let mut state = self.state.lock().unwrap();
         state.handler = Some(handler);

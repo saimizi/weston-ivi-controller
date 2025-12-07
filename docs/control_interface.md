@@ -9,6 +9,10 @@ This document describes the JSON-RPC 2.0 protocol used to communicate with the W
 - [Message Format](#message-format)
 - [Error Codes](#error-codes)
 - [RPC Methods](#rpc-methods)
+  - [list_layers](#list_layers)
+  - [get_layer](#get_layer)
+  - [set_layer_visibility](#set_layer_visibility)
+  - [set_layer_opacity](#set_layer_opacity)
   - [list_surfaces](#list_surfaces)
   - [get_surface](#get_surface)
   - [set_position](#set_position)
@@ -19,6 +23,11 @@ This document describes the JSON-RPC 2.0 protocol used to communicate with the W
   - [set_z_order](#set_z_order)
   - [set_focus](#set_focus)
   - [commit](#commit)
+- [Event Notifications](#event-notifications)
+  - [subscribe](#subscribe)
+  - [unsubscribe](#unsubscribe)
+  - [list_subscriptions](#list_subscriptions)
+  - [Notification Format](#notification-format)
 - [Data Types](#data-types)
 - [Examples](#examples)
 
@@ -467,45 +476,29 @@ Adjust the opacity of an IVI surface.
 
 Rotate an IVI surface.
 
+Availability note: Orientation control is not supported by the current IVI layout API used by this build. This method returns an error indicating it is not supported.
+
 **Request:**
+```json
+{ "id": 7, "method": "set_orientation", "params": { "id": 1000, "orientation": "Rotate90" } }
+```
+
+**Error Response (not supported):**
 ```json
 {
   "id": 7,
-  "method": "set_orientation",
-  "params": {
-    "id": 1000,
-    "orientation": "Rotate90"
+  "error": {
+    "code": -32603,
+    "message": "Orientation control not supported by current IVI API"
   }
 }
 ```
 
-**Response:**
-```json
-{
-  "id": 7,
-  "result": {
-    "success": true
-  }
-}
-```
+If your environment uses an IVI layout API that supports orientation setting, this method may be implemented in future builds.
 
 **Parameters:**
 - `id` (number, required): Surface ID
-- `orientation` (string, required): One of:
-  - `"Normal"` - 0 degrees
-  - `"Rotate90"` - 90 degrees clockwise
-  - `"Rotate180"` - 180 degrees
-  - `"Rotate270"` - 270 degrees clockwise
-
-**Returns:**
-- `success` (boolean): Always `true` on success
-
-**Errors:**
-- `-32000`: Surface not found
-- `-32602`: Invalid parameters (invalid orientation value)
-
-**Validation:**
-- Only the four specified orientation values are accepted
+- `orientation` (string, required): One of `"Normal"`, `"Rotate90"`, `"Rotate180"`, `"Rotate270"`
 
 ---
 
@@ -652,6 +645,224 @@ This method is essential for atomic updates. For example, to move and resize a w
 ```
 
 All three changes (position, size, opacity) will be applied simultaneously, preventing any visual artifacts.
+
+---
+
+### list_layers
+
+List all tracked IVI layers and their properties.
+
+Request:
+```json
+{ "id": 100, "method": "list_layers", "params": {} }
+```
+
+Response:
+```json
+{
+  "id": 100,
+  "result": {
+    "layers": [
+      { "id": 5000, "visibility": true, "opacity": 1.0 },
+      { "id": 5001, "visibility": false, "opacity": 0.5 }
+    ]
+  }
+}
+```
+
+---
+
+### get_layer
+
+Get properties of a specific layer.
+
+Request:
+```json
+{ "id": 101, "method": "get_layer", "params": { "id": 5000 } }
+```
+
+Response:
+```json
+{
+  "id": 101,
+  "result": { "id": 5000, "visibility": true, "opacity": 1.0 }
+}
+```
+
+Errors: `-32602` for invalid id
+
+---
+
+### set_layer_visibility
+
+Show or hide a layer.
+
+Request:
+```json
+{ "id": 102, "method": "set_layer_visibility", "params": { "id": 5000, "visible": true } }
+```
+
+Response:
+```json
+{ "id": 102, "result": { "success": true, "committed": false } }
+```
+
+Optional param: `auto_commit` (bool)
+
+---
+
+### set_layer_opacity
+
+Set layer opacity.
+
+Request:
+```json
+{ "id": 103, "method": "set_layer_opacity", "params": { "id": 5000, "opacity": 0.8 } }
+```
+
+Response:
+```json
+{ "id": 103, "result": { "success": true, "committed": false } }
+```
+
+Errors: `-32602` for invalid opacity
+
+---
+
+## Event Notifications
+
+Clients may subscribe to real-time events. Subscriptions are per-client and selective by event type. Each client has a best-effort FIFO buffer (default 100); oldest notifications are dropped when full.
+
+- Delivery: Newline-delimited JSON-RPC notifications (no `id`)
+- Filtering: By event type (no per-surface filtering)
+- Multiple clients: Supported
+
+Supported event types:
+- SurfaceCreated, SurfaceDestroyed, GeometryChanged, VisibilityChanged, OpacityChanged, OrientationChanged, ZOrderChanged, FocusChanged
+- LayerCreated, LayerDestroyed, LayerVisibilityChanged, LayerOpacityChanged
+
+### subscribe
+
+Request:
+```json
+{
+  "id": 200,
+  "method": "subscribe",
+  "params": { "event_types": ["SurfaceCreated", "GeometryChanged", "FocusChanged"] }
+}
+```
+
+Response:
+```json
+{
+  "id": 200,
+  "result": { "success": true, "subscribed": ["SurfaceCreated", "GeometryChanged", "FocusChanged"] }
+}
+```
+
+### unsubscribe
+
+Request:
+```json
+{
+  "id": 201,
+  "method": "unsubscribe",
+  "params": { "event_types": ["GeometryChanged"] }
+}
+```
+
+Response:
+```json
+{
+  "id": 201,
+  "result": { "success": true, "unsubscribed": ["GeometryChanged"] }
+}
+```
+
+### list_subscriptions
+
+Request:
+```json
+{ "id": 202, "method": "list_subscriptions", "params": {} }
+```
+
+Response:
+```json
+{ "id": 202, "result": { "subscriptions": ["SurfaceCreated", "FocusChanged"] } }
+```
+
+### Notification Format
+
+Notifications are JSON-RPC messages with no `id` and method `"notification"`.
+
+Common shape:
+```json
+{
+  "method": "notification",
+  "params": { /* event-specific fields */ }
+}
+```
+
+Examples:
+- SurfaceCreated
+```json
+{ "method": "notification", "params": { "event_type": "SurfaceCreated", "surface_id": 1000 } }
+```
+
+- GeometryChanged
+```json
+{
+  "method": "notification",
+  "params": {
+    "event_type": "GeometryChanged",
+    "surface_id": 1000,
+    "old_position": {"x": 0, "y": 0},
+    "new_position": {"x": 100, "y": 100},
+    "old_size": {"width": 1920, "height": 1080},
+    "new_size": {"width": 1280, "height": 720}
+  }
+}
+```
+
+- VisibilityChanged
+```json
+{ "method": "notification", "params": { "event_type": "VisibilityChanged", "surface_id": 1000, "old_visibility": false, "new_visibility": true } }
+```
+
+- OpacityChanged
+```json
+{ "method": "notification", "params": { "event_type": "OpacityChanged", "surface_id": 1000, "old_opacity": 1.0, "new_opacity": 0.7 } }
+```
+
+- OrientationChanged
+```json
+{ "method": "notification", "params": { "event_type": "OrientationChanged", "surface_id": 1000, "old_orientation": "Normal", "new_orientation": "Rotate90" } }
+```
+
+- ZOrderChanged
+```json
+{ "method": "notification", "params": { "event_type": "ZOrderChanged", "surface_id": 1000, "old_z_order": 0, "new_z_order": 5 } }
+```
+
+- FocusChanged
+```json
+{ "method": "notification", "params": { "event_type": "FocusChanged", "old_focused_surface": 1000, "new_focused_surface": 2000 } }
+```
+
+- LayerCreated / LayerDestroyed
+```json
+{ "method": "notification", "params": { "event_type": "LayerCreated", "layer_id": 5000 } }
+```
+
+- LayerVisibilityChanged
+```json
+{ "method": "notification", "params": { "event_type": "LayerVisibilityChanged", "layer_id": 5000, "old_visibility": false, "new_visibility": true } }
+```
+
+- LayerOpacityChanged
+```json
+{ "method": "notification", "params": { "event_type": "LayerOpacityChanged", "layer_id": 5000, "old_opacity": 0.5, "new_opacity": 1.0 } }
+```
 
 ---
 

@@ -185,6 +185,44 @@ impl IviLayoutApi {
         }
     }
 
+    /// Get all layers
+    pub fn get_layers(&self) -> Vec<IviLayer> {
+        unsafe {
+            if self.api.is_null() {
+                return Vec::new();
+            }
+
+            let get_layers_fn = match (*self.api).get_layers {
+                Some(f) => f,
+                None => return Vec::new(),
+            };
+
+            let mut length: i32 = 0;
+            let mut array: *mut *mut ivi_layout_layer = std::ptr::null_mut();
+
+            get_layers_fn(&mut length, &mut array);
+
+            if array.is_null() || length <= 0 {
+                return Vec::new();
+            }
+
+            let api = Arc::new(Self { api: self.api });
+            let mut layers = Vec::new();
+
+            for i in 0..length as isize {
+                let handle = *array.offset(i);
+                if !handle.is_null() {
+                    layers.push(IviLayer {
+                        handle,
+                        api: api.clone(),
+                    });
+                }
+            }
+
+            layers
+        }
+    }
+
     /// Create a new layer with the given ID and dimensions
     pub fn create_layer(&self, id: u32, width: i32, height: i32) -> Option<IviLayer> {
         unsafe {
@@ -378,6 +416,13 @@ impl IviSurface {
             .unwrap_or(false)
     }
 
+    /// Get surface event mask (what changed)
+    pub fn get_event_mask(&self) -> u32 {
+        self.get_properties()
+            .map(|props| props.event_mask)
+            .unwrap_or(0)
+    }
+
     /// Set surface visibility
     pub fn set_visibility(&mut self, visible: bool) {
         unsafe {
@@ -436,17 +481,11 @@ impl IviSurface {
             .unwrap_or(Orientation::Normal)
     }
 
-    /// Set surface orientation from degrees
-    /// Note: The IVI layout API doesn't have a direct set_orientation function,
-    /// so this would need to be implemented through transformation matrices
-    /// or other means depending on the Weston version
+    /// Set surface orientation from degrees (not supported in current IVI API)
     pub fn set_orientation(&mut self, degrees: i32) -> Result<(), String> {
-        // Validate and convert orientation
-        let _orientation = Orientation::from_degrees(degrees)?;
-
-        // TODO: Implement orientation setting when the API is available
-        // This may require using transformation matrices or other mechanisms
-        Ok(())
+        // Validate to provide consistent error messages, then report unsupported
+        let _ = Orientation::from_degrees(degrees)?;
+        Err("Orientation control not supported by current IVI API".to_string())
     }
 
     /// Set keyboard focus to this surface
@@ -565,7 +604,6 @@ impl IviLayer {
             if self.api.api.is_null() || self.handle.is_null() {
                 return 0;
             }
-
             match (*self.api.api).get_id_of_layer {
                 Some(f) => f(self.handle),
                 None => 0,
@@ -596,6 +634,13 @@ impl IviLayer {
         self.get_properties()
             .map(|props| props.visibility)
             .unwrap_or(false)
+    }
+
+    /// Get layer event mask (what changed)
+    pub fn get_event_mask(&self) -> u32 {
+        self.get_properties()
+            .map(|props| props.event_mask)
+            .unwrap_or(0)
     }
 
     /// Set layer visibility

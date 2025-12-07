@@ -5,4 +5,7 @@ pub mod weston;
 
 // Re-export commonly used types
 pub use bindings::*;
-pub use weston::{weston_compositor, weston_plugin_api_get, IVI_LAYOUT_API_NAME};
+pub use weston::{
+    weston_compositor, weston_compositor_add_destroy_listener_once, weston_plugin_api_get,
+    wl_listener, wl_notify_func_t,
+};

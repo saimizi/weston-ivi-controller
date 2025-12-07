@@ -32,6 +32,12 @@ pub trait Transport: Send + Sync {
     /// Send data to a client
     fn send(&self, client_id: ClientId, data: &[u8]) -> Result<(), TransportError>;
 
+    /// Send data to multiple clients (for notifications)
+    fn send_to_clients(&self, client_ids: &[ClientId], data: &[u8]) -> Result<(), TransportError>;
+
+    /// Get list of all connected client IDs
+    fn get_connected_clients(&self) -> Vec<ClientId>;
+
     /// Register a message handler
     fn register_handler(&mut self, handler: Box<dyn MessageHandler>);
 }
