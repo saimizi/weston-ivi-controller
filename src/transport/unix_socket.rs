@@ -3,13 +3,14 @@
 #[allow(unused)]
 use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
 use std::collections::HashMap;
-use std::io::{self, Read, Write};
+use std::io;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use crate::rpc::framing::{write_frame, FrameReadResult, FrameReader};
 use crate::rpc::transport::{ClientId, MessageHandler, Transport, TransportError};
 
 /// Configuration for UNIX domain socket transport
@@ -21,14 +22,14 @@ pub struct UnixSocketConfig {
 /// Client connection state
 struct ClientConnection {
     stream: UnixStream,
-    buffer: Vec<u8>,
+    frame_reader: FrameReader,
 }
 
 /// Shared state for the transport
 struct TransportState {
     clients: HashMap<ClientId, ClientConnection>,
     next_client_id: ClientId,
-    handler: Option<Box<dyn MessageHandler>>,
+    handler: Option<Arc<dyn MessageHandler>>,
     running: bool,
 }
 
@@ -74,7 +75,7 @@ impl UnixSocketTransport {
                     client_id,
                     ClientConnection {
                         stream,
-                        buffer: Vec::new(),
+                        frame_reader: FrameReader::new(),
                     },
                 );
 
@@ -89,37 +90,39 @@ impl UnixSocketTransport {
         }
     }
 
-    /// Read data from a client (returns messages to process)
+    /// Read data from a client using length-prefixed protocol (returns messages to process)
     fn read_from_client(connection: &mut ClientConnection) -> io::Result<(bool, Vec<Vec<u8>>)> {
-        let mut temp_buf = [0u8; 4096];
         let mut messages = Vec::new();
 
+        // Keep reading frames until we get NeedMore, Eof, or an error
         loop {
-            match connection.stream.read(&mut temp_buf) {
-                Ok(0) => {
+            match connection.frame_reader.read_frame(&mut connection.stream) {
+                Ok(FrameReadResult::Complete(message)) => {
+                    // Got a complete message
+                    messages.push(message);
+                    // Try to read more messages
+                    continue;
+                }
+                Ok(FrameReadResult::NeedMore) => {
+                    // No more data available or partial message
+                    // Return what we have so far
+                    return Ok((true, messages));
+                }
+                Ok(FrameReadResult::Eof) => {
                     // Connection closed
                     return Ok((false, messages));
                 }
-                Ok(n) => {
-                    connection.buffer.extend_from_slice(&temp_buf[..n]);
-
-                    // Extract complete messages (newline-delimited)
-                    while let Some(pos) = connection.buffer.iter().position(|&b| b == b'\n') {
-                        let message = connection.buffer.drain(..=pos).collect::<Vec<u8>>();
-                        let message = &message[..message.len() - 1]; // Remove newline
-
-                        if !message.is_empty() {
-                            messages.push(message.to_vec());
-                        }
-                    }
-                }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    return Ok((true, messages));
+                Err(e) if e.kind() == io::ErrorKind::InvalidData => {
+                    // Protocol violation (zero-length or too large)
+                    jerror!("Protocol error: {}", e);
+                    return Ok((false, messages));
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {
+                    // Retry
                     continue;
                 }
                 Err(_e) => {
+                    // Connection error
                     return Ok((false, messages));
                 }
             }
@@ -171,13 +174,18 @@ impl UnixSocketTransport {
             }
 
             // Process messages outside the lock
-            {
+            // Get handler reference before releasing lock
+            let handler = {
                 let state_lock = state.lock().unwrap();
-                if let Some(ref handler) = state_lock.handler {
-                    for (client_id, messages) in client_messages {
-                        for message in messages {
-                            handler.handle_message(client_id, &message);
-                        }
+                state_lock.handler.clone()
+            };
+
+            // Call handler without holding the state lock to avoid deadlock
+            // (handler.handle_message calls transport.send which needs to acquire the lock)
+            if let Some(ref handler) = handler {
+                for (client_id, messages) in client_messages {
+                    for message in messages {
+                        handler.handle_message(client_id, &message);
                     }
                 }
             }
@@ -277,19 +285,9 @@ impl Transport for UnixSocketTransport {
         let mut state = self.state.lock().unwrap();
 
         if let Some(connection) = state.clients.get_mut(&client_id) {
-            // Send data with newline delimiter
-            connection
-                .stream
-                .write_all(data)
-                .map_err(|e| TransportError::SendError(format!("Failed to send data: {}", e)))?;
-            connection
-                .stream
-                .write_all(b"\n")
-                .map_err(|e| TransportError::SendError(format!("Failed to send newline: {}", e)))?;
-            connection
-                .stream
-                .flush()
-                .map_err(|e| TransportError::SendError(format!("Failed to flush: {}", e)))?;
+            // Use the shared framing module to write the frame
+            write_frame(&mut connection.stream, data)
+                .map_err(|e| TransportError::SendError(format!("Failed to send frame: {}", e)))?;
 
             Ok(())
         } else {
@@ -306,16 +304,10 @@ impl Transport for UnixSocketTransport {
 
         for &client_id in client_ids {
             if let Some(connection) = state.clients.get_mut(&client_id) {
-                // Send data with newline delimiter (best-effort)
-                if let Err(e) = connection.stream.write_all(data) {
+                // Use the shared framing module (best-effort delivery)
+                if let Err(e) = write_frame(&mut connection.stream, data) {
                     errors.push((client_id, e));
-                    continue;
                 }
-                if let Err(e) = connection.stream.write_all(b"\n") {
-                    errors.push((client_id, e));
-                    continue;
-                }
-                let _ = connection.stream.flush();
             }
         }
 
@@ -335,7 +327,7 @@ impl Transport for UnixSocketTransport {
 
     fn register_handler(&mut self, handler: Box<dyn MessageHandler>) {
         let mut state = self.state.lock().unwrap();
-        state.handler = Some(handler);
+        state.handler = Some(Arc::from(handler));
     }
 }
 
@@ -399,10 +391,13 @@ mod tests {
         // Connect a client
         let mut client = UnixStream::connect(&socket_path).expect("Failed to connect");
 
-        // Send a message
+        // Send a message with length prefix
+        let msg = b"test message";
+        let len_bytes = (msg.len() as u32).to_be_bytes();
         client
-            .write_all(b"test message\n")
-            .expect("Failed to write");
+            .write_all(&len_bytes)
+            .expect("Failed to write length");
+        client.write_all(msg).expect("Failed to write message");
         client.flush().expect("Failed to flush");
 
         // Give it time to process
@@ -463,15 +458,17 @@ mod tests {
         let mut client1 = UnixStream::connect(&socket_path).expect("Failed to connect client 1");
         let mut client2 = UnixStream::connect(&socket_path).expect("Failed to connect client 2");
 
-        // Send messages from both clients
-        client1
-            .write_all(b"message from client 1\n")
-            .expect("Failed to write");
+        // Send messages from both clients with length prefix
+        let msg1 = b"message from client 1";
+        let len1 = (msg1.len() as u32).to_be_bytes();
+        client1.write_all(&len1).expect("Failed to write");
+        client1.write_all(msg1).expect("Failed to write");
         client1.flush().expect("Failed to flush");
 
-        client2
-            .write_all(b"message from client 2\n")
-            .expect("Failed to write");
+        let msg2 = b"message from client 2";
+        let len2 = (msg2.len() as u32).to_be_bytes();
+        client2.write_all(&len2).expect("Failed to write");
+        client2.write_all(msg2).expect("Failed to write");
         client2.flush().expect("Failed to flush");
 
         // Give it time to process

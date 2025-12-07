@@ -115,10 +115,8 @@ impl RpcHandler {
                         for notification in notifications {
                             // Serialize notification to JSON
                             match serde_json::to_vec(&notification) {
-                                Ok(mut json) => {
-                                    // Add newline delimiter
-                                    json.push(b'\n');
-
+                                Ok(json) => {
+                                    // Transport handles length-prefix framing
                                     // Send to client
                                     let transport_lock = transport.lock().unwrap();
                                     if let Some(ref t) = *transport_lock {
@@ -867,15 +865,30 @@ impl MessageHandler for RpcMessageHandler {
         };
 
         // Send the response back to the client
+        jdebug!(
+            "Sending response to client {}, {} bytes",
+            client_id,
+            response_data.len()
+        );
         let transport_lock = self.rpc_handler.transport.lock().unwrap();
         if let Some(transport) = transport_lock.as_ref() {
-            if let Err(e) = transport.send(client_id, &response_data) {
-                jerror!(
-                    "Failed to send RPC response to client {}: {:?}",
-                    client_id,
-                    e
-                );
+            match transport.send(client_id, &response_data) {
+                Ok(_) => {
+                    jdebug!("Successfully sent response to client {}", client_id);
+                }
+                Err(e) => {
+                    jerror!(
+                        "Failed to send RPC response to client {}: {:?}",
+                        client_id,
+                        e
+                    );
+                }
             }
+        } else {
+            jwarn!(
+                "No transport available to send response to client {}",
+                client_id
+            );
         }
     }
 

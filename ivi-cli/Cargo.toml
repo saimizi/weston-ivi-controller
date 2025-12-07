@@ -1,0 +1,14 @@
+[package]
+name = "ivi-cli"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Command-line interface for Weston IVI Controller"
+
+[[bin]]
+name = "ivi_cli"
+path = "src/main.rs"
+
+[dependencies]
+ivi-client = { path = "../ivi-client" }
+clap = { version = "4.5", features = ["derive"] }

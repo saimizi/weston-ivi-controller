@@ -1,0 +1,21 @@
+[package]
+name = "ivi-client"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Client library for Weston IVI Controller with Rust and C APIs"
+
+[lib]
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+weston-ivi-controller = { path = "..", features = [] }
+
+[dev-dependencies]
+proptest = "1.4"
+
+[build-dependencies]
+cbindgen = "0.26"
