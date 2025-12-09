@@ -190,7 +190,7 @@ impl IviClient {
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
     /// let surface = client.get_surface(1000)?;
-    /// println!("Surface position: {}", surface.position);
+    /// println!("Surface destination position: {}", surface.dest_position);
     /// # Ok(())
     /// # }
     /// ```

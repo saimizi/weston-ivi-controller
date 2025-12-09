@@ -76,14 +76,6 @@ typedef enum IviOrientation {
 typedef struct IviClient IviClient;
 
 /*
- C-compatible position structure
- */
-typedef struct IviPosition {
-    int32_t x;
-    int32_t y;
-} IviPosition;
-
-/*
  C-compatible size structure
  */
 typedef struct IviSize {
@@ -92,12 +84,23 @@ typedef struct IviSize {
 } IviSize;
 
 /*
+ C-compatible position structure
+ */
+typedef struct IviPosition {
+    int32_t x;
+    int32_t y;
+} IviPosition;
+
+/*
  C-compatible surface structure
  */
 typedef struct IviSurface {
     uint32_t id;
-    struct IviPosition position;
-    struct IviSize size;
+    struct IviSize orig_size;
+    struct IviPosition src_position;
+    struct IviSize src_size;
+    struct IviPosition dest_position;
+    struct IviSize dest_size;
     bool visibility;
     float opacity;
     enum IviOrientation orientation;

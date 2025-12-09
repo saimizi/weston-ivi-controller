@@ -10,8 +10,11 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Clone)]
 pub struct SurfaceState {
     pub id: u32,
-    pub position: (i32, i32),
-    pub size: (i32, i32),
+    pub orig_size: (i32, i32),
+    pub src_position: (i32, i32),
+    pub src_size: (i32, i32),
+    pub dest_position: (i32, i32),
+    pub dest_size: (i32, i32),
     pub visibility: bool,
     pub opacity: f32,
     pub orientation: Orientation,
@@ -166,16 +169,22 @@ impl StateManager {
         // Populate with current IVI surfaces
         for surface in ivi_surfaces {
             let id = surface.get_id();
-            let position = surface.get_position();
-            let size = surface.get_size();
+            let (orig_width, orig_height, _) = surface.get_orig_size();
+            let src_position = surface.get_source_position();
+            let src_size = surface.get_source_size();
+            let dest_position = surface.get_position();
+            let dest_size = surface.get_size();
             let visibility = surface.get_visibility();
             let opacity = surface.get_opacity();
             let orientation = surface.get_orientation().into();
 
             let state = SurfaceState {
                 id,
-                position,
-                size,
+                orig_size: (orig_width, orig_height),
+                src_position,
+                src_size,
+                dest_position,
+                dest_size,
                 visibility,
                 opacity,
                 orientation,
@@ -209,16 +218,22 @@ impl StateManager {
     pub fn handle_surface_created(&mut self, surface_id: u32) {
         // Query the IVI API for the new surface
         if let Some(surface) = self.ivi_api.get_surface_from_id(surface_id) {
-            let position = surface.get_position();
-            let size = surface.get_size();
+            let (orig_width, orig_height, _) = surface.get_orig_size();
+            let src_position = surface.get_source_position();
+            let src_size = surface.get_source_size();
+            let dest_position = surface.get_position();
+            let dest_size = surface.get_size();
             let visibility = surface.get_visibility();
             let opacity = surface.get_opacity();
             let orientation = surface.get_orientation().into();
 
             let state = SurfaceState {
                 id: surface_id,
-                position,
-                size,
+                orig_size: (orig_width, orig_height),
+                src_position,
+                src_size,
+                dest_position,
+                dest_size,
                 visibility,
                 opacity,
                 orientation,
@@ -263,8 +278,11 @@ impl StateManager {
 
         // Query the IVI API for updated surface properties
         if let Some(surface) = self.ivi_api.get_surface_from_id(surface_id) {
-            let position = surface.get_position();
-            let size = surface.get_size();
+            let (orig_width, orig_height, _) = surface.get_orig_size();
+            let src_position = surface.get_source_position();
+            let src_size = surface.get_source_size();
+            let dest_position = surface.get_position();
+            let dest_size = surface.get_size();
             let visibility = surface.get_visibility();
             let opacity = surface.get_opacity();
             let orientation = surface.get_orientation().into();
@@ -274,8 +292,11 @@ impl StateManager {
 
             let new_state = SurfaceState {
                 id: surface_id,
-                position,
-                size,
+                orig_size: (orig_width, orig_height),
+                src_position,
+                src_size,
+                dest_position,
+                dest_size,
                 visibility,
                 opacity,
                 orientation,
@@ -306,15 +327,19 @@ impl StateManager {
         old: &SurfaceState,
         new_state: &SurfaceState,
     ) {
-        // Geometry (position or size)
-        if old.position != new_state.position || old.size != new_state.size {
+        // Geometry (any position or size change)
+        if old.src_position != new_state.src_position
+            || old.src_size != new_state.src_size
+            || old.dest_position != new_state.dest_position
+            || old.dest_size != new_state.dest_size
+        {
             let notification_manager = self.notification_manager.lock().unwrap();
             notification_manager.emit_geometry_change(
                 surface_id,
-                old.position,
-                new_state.position,
-                old.size,
-                new_state.size,
+                old.dest_position,
+                new_state.dest_position,
+                old.dest_size,
+                new_state.dest_size,
             );
         }
 
@@ -364,14 +389,18 @@ impl StateManager {
 
         // Geometry
         if has(NOTIF_POSITION) || has(NOTIF_DEST_RECT) || has(NOTIF_DIMENSION) {
-            if old.position != new_state.position || old.size != new_state.size {
+            if old.src_position != new_state.src_position
+                || old.src_size != new_state.src_size
+                || old.dest_position != new_state.dest_position
+                || old.dest_size != new_state.dest_size
+            {
                 let nm = self.notification_manager.lock().unwrap();
                 nm.emit_geometry_change(
                     surface_id,
-                    old.position,
-                    new_state.position,
-                    old.size,
-                    new_state.size,
+                    old.dest_position,
+                    new_state.dest_position,
+                    old.dest_size,
+                    new_state.dest_size,
                 );
             }
         }
@@ -568,8 +597,11 @@ mod tests {
 
         let old = SurfaceState {
             id: 42,
-            position: (0, 0),
-            size: (100, 100),
+            orig_size: (100, 100),
+            src_position: (0, 0),
+            src_size: (100, 100),
+            dest_position: (0, 0),
+            dest_size: (100, 100),
             visibility: false,
             opacity: 1.0,
             orientation: Orientation::Normal,
@@ -577,8 +609,11 @@ mod tests {
         };
         let new_state = SurfaceState {
             id: 42,
-            position: (10, 20),
-            size: (120, 110),
+            orig_size: (100, 100),
+            src_position: (10, 10),
+            src_size: (100, 100),
+            dest_position: (0, 0),
+            dest_size: (200, 200),
             visibility: true,
             opacity: 0.5,
             orientation: Orientation::Rotate90,
@@ -651,8 +686,11 @@ mod tests {
 
         let old = SurfaceState {
             id: 1,
-            position: (10, 10),
-            size: (200, 150),
+            orig_size: (200, 150),
+            src_position: (10, 10),
+            src_size: (200, 150),
+            dest_position: (10, 10),
+            dest_size: (200, 150),
             visibility: true,
             opacity: 0.75,
             orientation: Orientation::Normal,

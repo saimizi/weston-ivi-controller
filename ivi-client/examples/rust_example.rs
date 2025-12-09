@@ -69,10 +69,25 @@ fn demonstrate_surface_operations(client: &mut IviClient) -> Result<()> {
     for surface in &surfaces {
         println!("    Surface ID: {}", surface.id);
         println!(
-            "      Position: ({}, {})",
-            surface.position.x, surface.position.y
+            "      OrigSize: ({}, {})",
+            surface.orig_size.width, surface.orig_size.height
         );
-        println!("      Size: {}x{}", surface.size.width, surface.size.height);
+        println!(
+            "      SrcPos: ({}, {})",
+            surface.src_position.x, surface.src_position.y
+        );
+        println!(
+            "      SrcSize: {}x{}",
+            surface.src_size.width, surface.src_size.height
+        );
+        println!(
+            "      DestPos: ({}, {})",
+            surface.dest_position.x, surface.dest_position.y
+        );
+        println!(
+            "      DestSize: {}x{}",
+            surface.dest_size.width, surface.dest_size.height
+        );
         println!("      Visibility: {}", surface.visibility);
         println!("      Opacity: {:.2}", surface.opacity);
         println!("      Orientation: {:?}", surface.orientation);
@@ -131,12 +146,24 @@ fn demonstrate_surface_operations(client: &mut IviClient) -> Result<()> {
         println!("\nVerifying changes...");
         let updated_surface = client.get_surface(surface_id)?;
         println!(
-            "  Position: ({}, {})",
-            updated_surface.position.x, updated_surface.position.y
+            "  OrigSize: {}x{}",
+            updated_surface.orig_size.width, updated_surface.orig_size.height
         );
         println!(
-            "  Size: {}x{}",
-            updated_surface.size.width, updated_surface.size.height
+            "  SrcPos: ({}, {})",
+            updated_surface.src_position.x, updated_surface.src_position.y
+        );
+        println!(
+            "  SrcSize: {}x{}",
+            updated_surface.src_size.width, updated_surface.src_size.height
+        );
+        println!(
+            "  DestPos: ({}, {})",
+            updated_surface.dest_position.x, updated_surface.dest_position.y
+        );
+        println!(
+            "  DestSize: {}x{}",
+            updated_surface.dest_size.width, updated_surface.dest_size.height
         );
         println!("  Opacity: {:.2}", updated_surface.opacity);
         println!("  Visibility: {}", updated_surface.visibility);

@@ -72,8 +72,17 @@ mod tests {
     fn test_format_surface_list_single() {
         let surfaces = vec![Surface {
             id: 1000,
-            position: Position { x: 0, y: 0 },
-            size: Size {
+            orig_size: Size {
+                width: 100,
+                height: 100,
+            },
+            src_position: Position { x: 0, y: 0 },
+            src_size: Size {
+                width: 100,
+                height: 100,
+            },
+            dest_position: Position { x: 0, y: 0 },
+            dest_size: Size {
                 width: 100,
                 height: 100,
             },
@@ -90,8 +99,17 @@ mod tests {
         let surfaces = vec![
             Surface {
                 id: 1000,
-                position: Position { x: 0, y: 0 },
-                size: Size {
+                orig_size: Size {
+                    width: 100,
+                    height: 100,
+                },
+                src_position: Position { x: 0, y: 0 },
+                src_size: Size {
+                    width: 100,
+                    height: 100,
+                },
+                dest_position: Position { x: 0, y: 0 },
+                dest_size: Size {
                     width: 100,
                     height: 100,
                 },
@@ -102,8 +120,17 @@ mod tests {
             },
             Surface {
                 id: 1001,
-                position: Position { x: 100, y: 100 },
-                size: Size {
+                orig_size: Size {
+                    width: 200,
+                    height: 200,
+                },
+                src_position: Position { x: 0, y: 0 },
+                src_size: Size {
+                    width: 200,
+                    height: 200,
+                },
+                dest_position: Position { x: 0, y: 0 },
+                dest_size: Size {
                     width: 200,
                     height: 200,
                 },
@@ -114,8 +141,17 @@ mod tests {
             },
             Surface {
                 id: 1002,
-                position: Position { x: 200, y: 200 },
-                size: Size {
+                orig_size: Size {
+                    width: 300,
+                    height: 300,
+                },
+                src_position: Position { x: 0, y: 0 },
+                src_size: Size {
+                    width: 300,
+                    height: 300,
+                },
+                dest_position: Position { x: 0, y: 0 },
+                dest_size: Size {
                     width: 300,
                     height: 300,
                 },
@@ -193,10 +229,13 @@ mod tests {
 /// ```
 pub fn format_surface_properties(surface: &Surface) -> String {
     format!(
-        "Surface {}:\n  Position: {}\n  Size: {}\n  Visibility: {}\n  Opacity: {:.2}\n  Orientation: {}\n  Z-Order: {}",
+        "Surface {}:\n  OrigSize: {}\n  SrcPos: {}\n  SrcSize: {}\n  DestPos: {}\n  DestSize: {}\n  Visibility: {}\n  Opacity: {:.2}\n  Orientation: {}\n  Z-Order: {}",
         surface.id,
-        surface.position,
-        surface.size,
+        surface.orig_size,
+        surface.src_position,
+        surface.src_size,
+        surface.dest_position,
+        surface.dest_size,
         surface.visibility,
         surface.opacity,
         surface.orientation,
@@ -237,8 +276,17 @@ mod properties_tests {
     fn test_format_surface_properties() {
         let surface = Surface {
             id: 1000,
-            position: Position { x: 100, y: 200 },
-            size: Size {
+            orig_size: Size {
+                width: 1920,
+                height: 1080,
+            },
+            src_position: Position { x: 0, y: 0 },
+            src_size: Size {
+                width: 1920,
+                height: 1080,
+            },
+            dest_position: Position { x: 100, y: 200 },
+            dest_size: Size {
                 width: 1920,
                 height: 1080,
             },
@@ -250,8 +298,11 @@ mod properties_tests {
 
         let output = format_surface_properties(&surface);
         assert!(output.contains("Surface 1000:"));
-        assert!(output.contains("Position: (100, 200)"));
-        assert!(output.contains("Size: 1920x1080"));
+        assert!(output.contains("OrigSize: 1920x1080"));
+        assert!(output.contains("SrcPos: (0, 0)"));
+        assert!(output.contains("SrcSize: 1920x1080"));
+        assert!(output.contains("DestPos: (100, 200)"));
+        assert!(output.contains("DestSize: 1920x1080"));
         assert!(output.contains("Visibility: true"));
         assert!(output.contains("Opacity: 1.00"));
         assert!(output.contains("Orientation: Normal"));
@@ -262,10 +313,19 @@ mod properties_tests {
     fn test_format_surface_properties_with_rotation() {
         let surface = Surface {
             id: 1001,
-            position: Position { x: -50, y: -100 },
-            size: Size {
+            orig_size: Size {
                 width: 800,
                 height: 600,
+            },
+            src_position: Position { x: 0, y: 0 },
+            src_size: Size {
+                width: 800,
+                height: 600,
+            },
+            dest_position: Position { x: -50, y: -100 },
+            dest_size: Size {
+                width: 1280,
+                height: 720,
             },
             visibility: false,
             opacity: 0.5,
@@ -275,8 +335,11 @@ mod properties_tests {
 
         let output = format_surface_properties(&surface);
         assert!(output.contains("Surface 1001:"));
-        assert!(output.contains("Position: (-50, -100)"));
-        assert!(output.contains("Size: 800x600"));
+        assert!(output.contains("OrigSize: 800x600"));
+        assert!(output.contains("SrcPos: (0, 0)"));
+        assert!(output.contains("SrcSize: 800x600"));
+        assert!(output.contains("DestPos: (-50, -100)"));
+        assert!(output.contains("DestSize: 1280x720"));
         assert!(output.contains("Visibility: false"));
         assert!(output.contains("Opacity: 0.50"));
         assert!(output.contains("Orientation: Rotate90"));
@@ -287,8 +350,17 @@ mod properties_tests {
     fn test_format_surface_properties_opacity_precision() {
         let surface = Surface {
             id: 1002,
-            position: Position { x: 0, y: 0 },
-            size: Size {
+            orig_size: Size {
+                width: 100,
+                height: 100,
+            },
+            src_position: Position { x: 0, y: 0 },
+            src_size: Size {
+                width: 100,
+                height: 100,
+            },
+            dest_position: Position { x: 0, y: 0 },
+            dest_size: Size {
                 width: 100,
                 height: 100,
             },

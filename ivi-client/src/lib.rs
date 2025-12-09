@@ -29,9 +29,9 @@
 //!     for surface in &surfaces {
 //!         println!("Surface {}: {}x{} at {}",
 //!             surface.id,
-//!             surface.size.width,
-//!             surface.size.height,
-//!             surface.position
+//!             surface.dest_size.width,
+//!             surface.dest_size.height,
+//!             surface.dest_position
 //!         );
 //!     }
 //!     

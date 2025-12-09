@@ -221,8 +221,11 @@ Get information about all active IVI surfaces.
     "surfaces": [
       {
         "id": 1000,
-        "position": { "x": 0, "y": 0 },
-        "size": { "width": 1920, "height": 1080 },
+        "orig_size": { "width": 1920, "height": 1080 },
+        "src_position": { "x": 0, "y": 0 },
+        "src_size": { "width": 1920, "height": 1080 },
+        "dest_position": { "x": 0, "y": 0 },
+        "dest_size": { "width": 1920, "height": 1080 },
         "visibility": true,
         "opacity": 1.0,
         "orientation": "Normal",
@@ -230,8 +233,11 @@ Get information about all active IVI surfaces.
       },
       {
         "id": 1001,
-        "position": { "x": 100, "y": 100 },
-        "size": { "width": 800, "height": 600 },
+        "orig_size": { "width": 1600, "height": 1200 },
+        "src_position": { "x": 0, "y": 0 },
+        "src_size": { "width": 1600, "height": 1200 },
+        "dest_position": { "x": 100, "y": 100 },
+        "dest_size": { "width": 800, "height": 600 },
         "visibility": false,
         "opacity": 0.8,
         "orientation": "Rotate90",
@@ -247,8 +253,11 @@ Get information about all active IVI surfaces.
 **Returns:**
 - `surfaces` (array): Array of surface objects, each containing:
   - `id` (number): Surface ID
-  - `position` (object): Position with `x` and `y` coordinates
-  - `size` (object): Size with `width` and `height`
+  - `orig_size` (object): Original application buffer size with `width` and `height`
+  - `src_position` (object): Source rectangle position with `x` and `y` coordinates
+  - `src_size` (object): Source rectangle size with `width` and `height`
+  - `dest_position` (object): Destination rectangle position with `x` and `y` coordinates
+  - `dest_size` (object): Destination rectangle size with `width` and `height`
   - `visibility` (boolean): Whether the surface is visible
   - `opacity` (number): Opacity value (0.0 - 1.0)
   - `orientation` (string): Orientation ("Normal", "Rotate90", "Rotate180", "Rotate270")
@@ -866,6 +875,21 @@ Examples:
 
 ---
 
+## Understanding Surface Rectangles
+
+IVI surfaces support sophisticated buffer management through three types of size/position information:
+
+- **Original Size (orig_size)**: The native dimensions of the application's Wayland buffer. This represents the actual pixel dimensions provided by the application.
+
+- **Source Rectangle (src_position, src_size)**: Defines which portion of the application buffer to display. This enables cropping - you can display only part of the buffer. For example, you might show only the top-left quarter of a 1920×1080 buffer.
+
+- **Destination Rectangle (dest_position, dest_size)**: Defines where and at what size to display the selected source content on screen. This enables positioning and scaling independently of the source.
+
+**Example Use Case**: Display the top-left quarter of a 1920×1080 application buffer at 50% scale:
+- `orig_size`: 1920×1080 (application buffer size)
+- `src_position`: (0, 0), `src_size`: 960×540 (crop to top-left quarter)
+- `dest_position`: (100, 100), `dest_size`: 480×270 (display at 50% scale, positioned at screen coordinates 100,100)
+
 ## Data Types
 
 ### Surface Object
@@ -873,13 +897,25 @@ Examples:
 ```typescript
 {
   id: number,              // Unique surface identifier
-  position: {
-    x: number,             // X coordinate in pixels
-    y: number              // Y coordinate in pixels
+  orig_size: {
+    width: number,         // Original application buffer width in pixels
+    height: number         // Original application buffer height in pixels
   },
-  size: {
-    width: number,         // Width in pixels
-    height: number         // Height in pixels
+  src_position: {
+    x: number,             // Source rectangle X coordinate
+    y: number              // Source rectangle Y coordinate
+  },
+  src_size: {
+    width: number,         // Source rectangle width in pixels
+    height: number         // Source rectangle height in pixels
+  },
+  dest_position: {
+    x: number,             // Destination rectangle X coordinate on screen
+    y: number              // Destination rectangle Y coordinate on screen
+  },
+  dest_size: {
+    width: number,         // Destination rectangle width on screen
+    height: number         // Destination rectangle height on screen
   },
   visibility: boolean,     // true = visible, false = hidden
   opacity: number,         // 0.0 (transparent) to 1.0 (opaque)

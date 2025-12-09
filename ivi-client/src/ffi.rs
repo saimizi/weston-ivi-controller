@@ -120,8 +120,11 @@ impl From<IviSize> for Size {
 #[derive(Debug, Clone, PartialEq)]
 pub struct IviSurface {
     pub id: u32,
-    pub position: IviPosition,
-    pub size: IviSize,
+    pub orig_size: IviSize,
+    pub src_position: IviPosition,
+    pub src_size: IviSize,
+    pub dest_position: IviPosition,
+    pub dest_size: IviSize,
     pub visibility: bool,
     pub opacity: f32,
     pub orientation: IviOrientation,
@@ -132,8 +135,11 @@ impl From<Surface> for IviSurface {
     fn from(surface: Surface) -> Self {
         IviSurface {
             id: surface.id,
-            position: surface.position.into(),
-            size: surface.size.into(),
+            orig_size: surface.orig_size.into(),
+            src_position: surface.src_position.into(),
+            src_size: surface.src_size.into(),
+            dest_position: surface.dest_position.into(),
+            dest_size: surface.dest_size.into(),
             visibility: surface.visibility,
             opacity: surface.opacity,
             orientation: surface.orientation.into(),
@@ -146,8 +152,11 @@ impl From<IviSurface> for Surface {
     fn from(surface: IviSurface) -> Self {
         Surface {
             id: surface.id,
-            position: surface.position.into(),
-            size: surface.size.into(),
+            orig_size: surface.orig_size.into(),
+            src_position: surface.src_position.into(),
+            src_size: surface.src_size.into(),
+            dest_position: surface.dest_position.into(),
+            dest_size: surface.dest_size.into(),
             visibility: surface.visibility,
             opacity: surface.opacity,
             orientation: surface.orientation.into(),
@@ -855,8 +864,17 @@ mod tests {
     fn test_surface_conversion() {
         let surface = Surface {
             id: 1000,
-            position: Position { x: 100, y: 200 },
-            size: Size {
+            orig_size: Size {
+                width: 1920,
+                height: 1080,
+            },
+            src_position: Position { x: 0, y: 0 },
+            src_size: Size {
+                width: 1920,
+                height: 1080,
+            },
+            dest_position: Position { x: 100, y: 200 },
+            dest_size: Size {
                 width: 1920,
                 height: 1080,
             },
@@ -868,10 +886,17 @@ mod tests {
 
         let ivi_surface: IviSurface = surface.clone().into();
         assert_eq!(ivi_surface.id, 1000);
-        assert_eq!(ivi_surface.position.x, 100);
-        assert_eq!(ivi_surface.position.y, 200);
-        assert_eq!(ivi_surface.size.width, 1920);
-        assert_eq!(ivi_surface.size.height, 1080);
+        assert_eq!(ivi_surface.orig_size.width, 1920);
+        assert_eq!(ivi_surface.orig_size.height, 1080);
+        assert_eq!(ivi_surface.src_position.x, 0);
+        assert_eq!(ivi_surface.src_position.y, 0);
+        assert_eq!(ivi_surface.src_size.width, 1920);
+        assert_eq!(ivi_surface.src_size.height, 1080);
+        assert_eq!(ivi_surface.dest_position.x, 100);
+        assert_eq!(ivi_surface.dest_position.y, 200);
+        assert_eq!(ivi_surface.dest_size.width, 1920);
+        assert_eq!(ivi_surface.dest_size.height, 1080);
+
         assert_eq!(ivi_surface.visibility, true);
         assert_eq!(ivi_surface.opacity, 1.0);
         assert_eq!(ivi_surface.orientation, IviOrientation::Normal);

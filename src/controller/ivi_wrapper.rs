@@ -322,6 +322,39 @@ impl IviSurface {
             .unwrap_or((0, 0))
     }
 
+    /// Get the original buffer size of the surface
+    pub fn get_orig_size(&self) -> (i32, i32, i32) {
+        unsafe {
+            if self.api.api.is_null() || self.handle.is_null() {
+                return (0, 0, 0);
+            }
+            match (*self.api.api).surface_get_size {
+                Some(f) => {
+                    let mut width = 0;
+                    let mut height = 0;
+                    let mut stride = 0;
+                    f(self.handle, &mut width, &mut height, &mut stride);
+                    (width, height, stride)
+                }
+                None => (0, 0, 0),
+            }
+        }
+    }
+
+    /// Get surface source rectangle position
+    pub fn get_source_position(&self) -> (i32, i32) {
+        self.get_properties()
+            .map(|props| (props.source_x, props.source_y))
+            .unwrap_or((0, 0))
+    }
+
+    /// Get surface source rectangle size
+    pub fn get_source_size(&self) -> (i32, i32) {
+        self.get_properties()
+            .map(|props| (props.source_width, props.source_height))
+            .unwrap_or((0, 0))
+    }
+
     /// Get full size information (x, y, width, height)
     fn get_size_full(&self) -> (i32, i32, i32, i32) {
         self.get_properties()

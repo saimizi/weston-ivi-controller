@@ -809,13 +809,25 @@ impl RpcHandler {
 fn surface_state_to_json(surface: &SurfaceState) -> serde_json::Value {
     json!({
         "id": surface.id,
-        "position": {
-            "x": surface.position.0,
-            "y": surface.position.1,
+        "orig_size": {
+            "width": surface.orig_size.0,
+            "height": surface.orig_size.1,
         },
-        "size": {
-            "width": surface.size.0,
-            "height": surface.size.1,
+        "src_position": {
+            "x": surface.src_position.0,
+            "y": surface.src_position.1,
+        },
+        "src_size": {
+            "width": surface.src_size.0,
+            "height": surface.src_size.1,
+        },
+        "dest_position": {
+            "x": surface.dest_position.0,
+            "y": surface.dest_position.1,
+        },
+        "dest_size": {
+            "width": surface.dest_size.0,
+            "height": surface.dest_size.1,
         },
         "visibility": surface.visibility,
         "opacity": surface.opacity,

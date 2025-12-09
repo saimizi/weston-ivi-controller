@@ -109,8 +109,11 @@ impl fmt::Display for Orientation {
 ///
 /// let surface = Surface {
 ///     id: 1000,
-///     position: Position { x: 0, y: 0 },
-///     size: Size { width: 1920, height: 1080 },
+///     orig_size: Size { width: 1920, height: 1080 },
+///     src_position: Position { x: 0, y: 0 },
+///     src_size: Size { width: 1920, height: 1080 },
+///     dest_position: Position { x: 0, y: 0 },
+///     dest_size: Size { width: 1920, height: 1080 },
 ///     visibility: true,
 ///     opacity: 1.0,
 ///     orientation: Orientation::Normal,
@@ -123,10 +126,16 @@ impl fmt::Display for Orientation {
 pub struct Surface {
     /// Unique identifier for the surface
     pub id: u32,
-    /// Position on the screen
-    pub position: Position,
-    /// Dimensions of the surface
-    pub size: Size,
+    /// Original buffer size from application
+    pub orig_size: Size,
+    /// Source rectangle position (which part of buffer to display)
+    pub src_position: Position,
+    /// Source rectangle size
+    pub src_size: Size,
+    /// Destination rectangle position (where to display on screen)
+    pub dest_position: Position,
+    /// Destination rectangle size (display size on screen)
+    pub dest_size: Size,
     /// Whether the surface is visible
     pub visibility: bool,
     /// Opacity level (0.0 = transparent, 1.0 = opaque)
@@ -141,8 +150,8 @@ impl fmt::Display for Surface {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Surface {{\n  ID: {}\n  Position: {}\n  Size: {}\n  Visibility: {}\n  Opacity: {:.2}\n  Orientation: {}\n  Z-Order: {}\n}}",
-            self.id, self.position, self.size, self.visibility, self.opacity, self.orientation, self.z_order
+            "Surface {{\n  ID: {}\n  OrigSize: {}\n  SrcPos: {}\n  SrcSize: {}\n  DestPos: {}\n  DestSize: {}\n  Visibility: {}\n  Opacity: {:.2}\n  Orientation: {}\n  Z-Order: {}\n}}",
+            self.id, self.orig_size, self.src_position, self.src_size, self.dest_position, self.dest_size, self.visibility, self.opacity, self.orientation, self.z_order
         )
     }
 }
@@ -217,10 +226,19 @@ mod tests {
     fn test_surface_serialization() {
         let surface = Surface {
             id: 1000,
-            position: Position { x: 100, y: 200 },
-            size: Size {
+            orig_size: Size {
                 width: 1920,
                 height: 1080,
+            },
+            src_position: Position { x: 0, y: 0 },
+            src_size: Size {
+                width: 1920,
+                height: 1080,
+            },
+            dest_position: Position { x: 50, y: 50 },
+            dest_size: Size {
+                width: 1280,
+                height: 720,
             },
             visibility: true,
             opacity: 1.0,
