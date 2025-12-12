@@ -210,7 +210,7 @@ mod tests {
         manager
             .subscribe(
                 client_id,
-                vec![EventType::SurfaceCreated, EventType::GeometryChanged],
+                vec![EventType::SurfaceCreated, EventType::SourceGeometryChanged],
             )
             .unwrap();
 
@@ -219,7 +219,7 @@ mod tests {
 
         let subs = manager.get_subscriptions(client_id);
         assert_eq!(subs.len(), 1);
-        assert!(subs.contains(&EventType::GeometryChanged));
+        assert!(subs.contains(&EventType::SourceGeometryChanged));
     }
 
     #[test]
@@ -297,7 +297,7 @@ mod tests {
             .subscribe(client1, vec![EventType::SurfaceCreated])
             .unwrap();
         manager
-            .subscribe(client2, vec![EventType::GeometryChanged])
+            .subscribe(client2, vec![EventType::SourceGeometryChanged])
             .unwrap();
 
         let notification = RpcNotification::new(

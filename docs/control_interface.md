@@ -11,17 +11,18 @@ This document describes the JSON-RPC 2.0 protocol used to communicate with the W
 - [RPC Methods](#rpc-methods)
   - [list_layers](#list_layers)
   - [get_layer](#get_layer)
+  - [set_layer_source_rectangle](#set_layer_source_rectangle)
+  - [set_layer_destination_rectangle](#set_layer_destination_rectangle)
   - [set_layer_visibility](#set_layer_visibility)
   - [set_layer_opacity](#set_layer_opacity)
   - [list_surfaces](#list_surfaces)
   - [get_surface](#get_surface)
-  - [set_position](#set_position)
-  - [set_size](#set_size)
-  - [set_visibility](#set_visibility)
-  - [set_opacity](#set_opacity)
-  - [set_orientation](#set_orientation)
-  - [set_z_order](#set_z_order)
-  - [set_focus](#set_focus)
+  - [set_surface_source_rectangle](#set_surface_source_rectangle)
+  - [set_surface_destination_rectangle](#set_surface_destination_rectangle)
+  - [set_surface_visibility](#set_surface_visibility)
+  - [set_surface_opacity](#set_surface_opacity)
+  - [set_surface_z_order](#set_surface_z_order)
+  - [set_surface_focus](#set_surface_focus)
   - [commit](#commit)
 - [Event Notifications](#event-notifications)
   - [subscribe](#subscribe)
@@ -60,18 +61,17 @@ External App → [UNIX Socket] → weston_ivi_controller.so → IVI Layout API �
 
 ### Change Batching and Atomic Updates
 
-By default, surface modification methods (`set_position`, `set_size`, `set_visibility`, `set_opacity`, `set_orientation`, `set_z_order`, `set_focus`) **queue changes without immediately committing** them to the compositor. This allows you to:
+By default, surface and layer modification methods (`set_surface_source_rectangle`, `set_surface_destination_rectangle`, `set_surface_visibility`, `set_surface_opacity`, `set_surface_z_order`, `set_surface_focus`, `set_layer_source_rectangle`, `set_layer_destination_rectangle`, `set_layer_visibility`, `set_layer_opacity`) **queue changes without immediately committing** them to the compositor. This allows you to:
 
-1. **Batch multiple operations** on one or more surfaces
+1. **Batch multiple operations** on one or more surfaces/layers
 2. **Apply changes atomically** using the `commit` method
 3. **Prevent visual artifacts** like tearing or intermediate states
 
 **Example workflow:**
 ```
-1. set_position (queued, not visible)
-2. set_size (queued, not visible)
-3. set_opacity (queued, not visible)
-4. commit → All changes applied atomically
+1. set_surface_destination_rectangle (queued, not visible)
+2. set_surface_opacity (queued, not visible)
+3. commit → All changes applied atomically
 ```
 
 **Auto-commit mode:** For simple use cases or backward compatibility, add `"auto_commit": true` to any modification request to commit immediately after that operation.
@@ -306,19 +306,21 @@ Get properties of a specific IVI surface.
 
 ---
 
-### set_position
+### set_surface_source_rectangle
 
-Update the position of an IVI surface.
+Set the source rectangle of an IVI surface (which part of the application buffer to display).
 
 **Request:**
 ```json
 {
   "id": 3,
-  "method": "set_position",
+  "method": "set_surface_source_rectangle",
   "params": {
     "id": 1000,
-    "x": 100,
-    "y": 200
+    "x": 0,
+    "y": 0,
+    "width": 1920,
+    "height": 1080
   }
 }
 ```
@@ -328,15 +330,18 @@ Update the position of an IVI surface.
 {
   "id": 3,
   "result": {
-    "success": true
+    "success": true,
+    "committed": false
   }
 }
 ```
 
 **Parameters:**
 - `id` (number, required): Surface ID
-- `x` (number, required): X coordinate (must be within display bounds)
-- `y` (number, required): Y coordinate (must be within display bounds)
+- `x` (number, required): Source X coordinate in buffer
+- `y` (number, required): Source Y coordinate in buffer
+- `width` (number, required): Source width in pixels (must be positive)
+- `height` (number, required): Source height in pixels (must be positive)
 - `auto_commit` (boolean, optional): If `true`, commits changes immediately. Default: `false`
 
 **Returns:**
@@ -345,11 +350,11 @@ Update the position of an IVI surface.
 
 **Errors:**
 - `-32000`: Surface not found
-- `-32602`: Invalid parameters (coordinates out of bounds)
+- `-32602`: Invalid parameters (coordinates or dimensions invalid)
 
 **Validation:**
-- Position coordinates must be within valid display bounds
-- Negative coordinates may be rejected depending on compositor configuration
+- Width and height must be positive non-zero values
+- Coordinates must be within buffer bounds
 
 **Behavior:**
 - By default (`auto_commit=false`), changes are queued and require a `commit` call
@@ -357,17 +362,19 @@ Update the position of an IVI surface.
 
 ---
 
-### set_size
+### set_surface_destination_rectangle
 
-Update the size of an IVI surface.
+Set the destination rectangle of an IVI surface (where and at what size to display on screen).
 
 **Request:**
 ```json
 {
   "id": 4,
-  "method": "set_size",
+  "method": "set_surface_destination_rectangle",
   "params": {
     "id": 1000,
+    "x": 100,
+    "y": 200,
     "width": 1280,
     "height": 720
   }
@@ -379,29 +386,39 @@ Update the size of an IVI surface.
 {
   "id": 4,
   "result": {
-    "success": true
+    "success": true,
+    "committed": false
   }
 }
 ```
 
 **Parameters:**
 - `id` (number, required): Surface ID
-- `width` (number, required): Width in pixels (must be positive)
-- `height` (number, required): Height in pixels (must be positive)
+- `x` (number, required): Destination X coordinate on screen
+- `y` (number, required): Destination Y coordinate on screen
+- `width` (number, required): Destination width in pixels (must be positive)
+- `height` (number, required): Destination height in pixels (must be positive)
+- `auto_commit` (boolean, optional): If `true`, commits changes immediately. Default: `false`
 
 **Returns:**
 - `success` (boolean): Always `true` on success
+- `committed` (boolean): Indicates whether changes were committed
 
 **Errors:**
 - `-32000`: Surface not found
-- `-32602`: Invalid parameters (non-positive dimensions)
+- `-32602`: Invalid parameters (coordinates out of bounds or non-positive dimensions)
 
 **Validation:**
 - Width and height must be positive non-zero values
+- Position coordinates must be within valid display bounds
+
+**Behavior:**
+- By default (`auto_commit=false`), changes are queued and require a `commit` call
+- With `auto_commit=true`, changes are applied immediately
 
 ---
 
-### set_visibility
+### set_surface_visibility
 
 Show or hide an IVI surface.
 
@@ -409,7 +426,7 @@ Show or hide an IVI surface.
 ```json
 {
   "id": 5,
-  "method": "set_visibility",
+  "method": "set_surface_visibility",
   "params": {
     "id": 1000,
     "visible": true
@@ -439,7 +456,7 @@ Show or hide an IVI surface.
 
 ---
 
-### set_opacity
+### set_surface_opacity
 
 Adjust the opacity of an IVI surface.
 
@@ -447,7 +464,7 @@ Adjust the opacity of an IVI surface.
 ```json
 {
   "id": 6,
-  "method": "set_opacity",
+  "method": "set_surface_opacity",
   "params": {
     "id": 1000,
     "opacity": 0.75
@@ -481,37 +498,7 @@ Adjust the opacity of an IVI surface.
 
 ---
 
-### set_orientation
-
-Rotate an IVI surface.
-
-Availability note: Orientation control is not supported by the current IVI layout API used by this build. This method returns an error indicating it is not supported.
-
-**Request:**
-```json
-{ "id": 7, "method": "set_orientation", "params": { "id": 1000, "orientation": "Rotate90" } }
-```
-
-**Error Response (not supported):**
-```json
-{
-  "id": 7,
-  "error": {
-    "code": -32603,
-    "message": "Orientation control not supported by current IVI API"
-  }
-}
-```
-
-If your environment uses an IVI layout API that supports orientation setting, this method may be implemented in future builds.
-
-**Parameters:**
-- `id` (number, required): Surface ID
-- `orientation` (string, required): One of `"Normal"`, `"Rotate90"`, `"Rotate180"`, `"Rotate270"`
-
----
-
-### set_z_order
+### set_surface_z_order
 
 Change the stacking order (z-order) of an IVI surface.
 
@@ -519,7 +506,7 @@ Change the stacking order (z-order) of an IVI surface.
 ```json
 {
   "id": 8,
-  "method": "set_z_order",
+  "method": "set_surface_z_order",
   "params": {
     "id": 1000,
     "z_order": 5
@@ -554,7 +541,7 @@ Change the stacking order (z-order) of an IVI surface.
 
 ---
 
-### set_focus
+### set_surface_focus
 
 Route keyboard and pointer input focus to an IVI surface.
 
@@ -562,7 +549,7 @@ Route keyboard and pointer input focus to an IVI surface.
 ```json
 {
   "id": 9,
-  "method": "set_focus",
+  "method": "set_surface_focus",
   "params": {
     "id": 1000
   }
@@ -637,23 +624,20 @@ Commit all pending surface changes atomically to the compositor.
 - After commit, all queued changes become visible
 
 **Use Case:**
-This method is essential for atomic updates. For example, to move and resize a window without showing intermediate states:
+This method is essential for atomic updates. For example, to reposition and resize a window without showing intermediate states:
 
 ```json
-// Step 1: Queue position change
-{"id": 1, "method": "set_position", "params": {"id": 1000, "x": 100, "y": 200}}
+// Step 1: Queue destination rectangle change
+{"id": 1, "method": "set_surface_destination_rectangle", "params": {"id": 1000, "x": 100, "y": 200, "width": 800, "height": 600}}
 
-// Step 2: Queue size change
-{"id": 2, "method": "set_size", "params": {"id": 1000, "width": 800, "height": 600}}
+// Step 2: Queue opacity change
+{"id": 2, "method": "set_surface_opacity", "params": {"id": 1000, "opacity": 0.8}}
 
-// Step 3: Queue opacity change
-{"id": 3, "method": "set_opacity", "params": {"id": 1000, "opacity": 0.8}}
-
-// Step 4: Commit all changes atomically
-{"id": 4, "method": "commit", "params": {}}
+// Step 3: Commit all changes atomically
+{"id": 3, "method": "commit", "params": {}}
 ```
 
-All three changes (position, size, opacity) will be applied simultaneously, preventing any visual artifacts.
+Both changes (destination rectangle, opacity) will be applied simultaneously, preventing any visual artifacts.
 
 ---
 
@@ -699,6 +683,50 @@ Response:
 ```
 
 Errors: `-32602` for invalid id
+
+---
+
+### set_layer_source_rectangle
+
+Set the source rectangle of an IVI layer.
+
+Request:
+```json
+{
+  "id": 100,
+  "method": "set_layer_source_rectangle",
+  "params": { "id": 5000, "x": 0, "y": 0, "width": 1920, "height": 1080 }
+}
+```
+
+Response:
+```json
+{ "id": 100, "result": { "success": true, "committed": false } }
+```
+
+Optional param: `auto_commit` (bool)
+
+---
+
+### set_layer_destination_rectangle
+
+Set the destination rectangle of an IVI layer.
+
+Request:
+```json
+{
+  "id": 101,
+  "method": "set_layer_destination_rectangle",
+  "params": { "id": 5000, "x": 0, "y": 0, "width": 1920, "height": 1080 }
+}
+```
+
+Response:
+```json
+{ "id": 101, "result": { "success": true, "committed": false } }
+```
+
+Optional param: `auto_commit` (bool)
 
 ---
 
@@ -977,27 +1005,26 @@ class IVIController:
     
     def get_surface(self, surface_id):
         return self._send_request('get_surface', {'id': surface_id})
-    
-    def set_position(self, surface_id, x, y):
-        return self._send_request('set_position', {'id': surface_id, 'x': x, 'y': y})
-    
-    def set_size(self, surface_id, width, height):
-        return self._send_request('set_size', {'id': surface_id, 'width': width, 'height': height})
-    
-    def set_visibility(self, surface_id, visible):
-        return self._send_request('set_visibility', {'id': surface_id, 'visible': visible})
-    
-    def set_opacity(self, surface_id, opacity):
-        return self._send_request('set_opacity', {'id': surface_id, 'opacity': opacity})
-    
-    def set_orientation(self, surface_id, orientation):
-        return self._send_request('set_orientation', {'id': surface_id, 'orientation': orientation})
-    
-    def set_z_order(self, surface_id, z_order):
-        return self._send_request('set_z_order', {'id': surface_id, 'z_order': z_order})
-    
-    def set_focus(self, surface_id):
-        return self._send_request('set_focus', {'id': surface_id})
+
+    def set_surface_source_rectangle(self, surface_id, x, y, width, height):
+        return self._send_request('set_surface_source_rectangle',
+            {'id': surface_id, 'x': x, 'y': y, 'width': width, 'height': height})
+
+    def set_surface_destination_rectangle(self, surface_id, x, y, width, height):
+        return self._send_request('set_surface_destination_rectangle',
+            {'id': surface_id, 'x': x, 'y': y, 'width': width, 'height': height})
+
+    def set_surface_visibility(self, surface_id, visible):
+        return self._send_request('set_surface_visibility', {'id': surface_id, 'visible': visible})
+
+    def set_surface_opacity(self, surface_id, opacity):
+        return self._send_request('set_surface_opacity', {'id': surface_id, 'opacity': opacity})
+
+    def set_surface_z_order(self, surface_id, z_order):
+        return self._send_request('set_surface_z_order', {'id': surface_id, 'z_order': z_order})
+
+    def set_surface_focus(self, surface_id):
+        return self._send_request('set_surface_focus', {'id': surface_id})
     
     def commit(self):
         return self._send_request('commit', {})
@@ -1019,30 +1046,30 @@ if __name__ == '__main__':
             # Example 1: Atomic updates (recommended for multiple changes)
             print("\n=== Atomic Update Example ===")
             # Queue multiple changes
-            controller.set_position(surface_id, 100, 100)
-            controller.set_size(surface_id, 800, 600)
-            controller.set_opacity(surface_id, 0.8)
+            controller.set_surface_destination_rectangle(surface_id, 100, 100, 800, 600)
+            controller.set_surface_opacity(surface_id, 0.8)
             # Commit all changes atomically
             controller.commit()
-            print(f"Atomically updated surface {surface_id}: position, size, and opacity")
-            
+            print(f"Atomically updated surface {surface_id}: destination rectangle and opacity")
+
             # Example 2: Single operation with auto-commit
             print("\n=== Auto-commit Example ===")
-            result = controller._send_request('set_position', {
-                'id': surface_id, 
-                'x': 200, 
+            result = controller._send_request('set_surface_destination_rectangle', {
+                'id': surface_id,
+                'x': 200,
                 'y': 300,
+                'width': 1024,
+                'height': 768,
                 'auto_commit': True
             })
             print(f"Moved surface {surface_id} with auto-commit: {result}")
-            
+
             # Example 3: Complex atomic update
             print("\n=== Complex Atomic Update ===")
-            controller.set_orientation(surface_id, "Rotate90")
-            controller.set_z_order(surface_id, 10)
-            controller.set_focus(surface_id)
+            controller.set_surface_z_order(surface_id, 10)
+            controller.set_surface_focus(surface_id)
             controller.commit()
-            print(f"Atomically updated surface {surface_id}: rotation, z-order, and focus")
+            print(f"Atomically updated surface {surface_id}: z-order and focus")
     
     finally:
         controller.disconnect()
@@ -1072,18 +1099,18 @@ send_rpc "list_surfaces" "{}"
 echo "Getting surface 1000..."
 send_rpc "get_surface" '{"id":1000}'
 
-# Move surface
-echo "Moving surface to (200, 300)..."
-send_rpc "set_position" '{"id":1000,"x":200,"y":300}'
+# Move and resize surface
+echo "Moving and resizing surface to (200, 300) with 1024x768..."
+send_rpc "set_surface_destination_rectangle" '{"id":1000,"x":200,"y":300,"width":1024,"height":768}'
 
 # Hide surface
 echo "Hiding surface..."
-send_rpc "set_visibility" '{"id":1000,"visible":false}'
+send_rpc "set_surface_visibility" '{"id":1000,"visible":false}'
 
 # Show surface with opacity
 echo "Showing surface with 50% opacity..."
-send_rpc "set_visibility" '{"id":1000,"visible":true}'
-send_rpc "set_opacity" '{"id":1000,"opacity":0.5}'
+send_rpc "set_surface_visibility" '{"id":1000,"visible":true}'
+send_rpc "set_surface_opacity" '{"id":1000,"opacity":0.5}'
 ```
 
 ### C Example
@@ -1146,8 +1173,8 @@ int main() {
     // List surfaces
     send_rpc_request(sock, "{\"id\":1,\"method\":\"list_surfaces\",\"params\":{}}\n");
     
-    // Set position
-    send_rpc_request(sock, "{\"id\":2,\"method\":\"set_position\",\"params\":{\"id\":1000,\"x\":100,\"y\":200}}\n");
+    // Set destination rectangle
+    send_rpc_request(sock, "{\"id\":2,\"method\":\"set_surface_destination_rectangle\",\"params\":{\"id\":1000,\"x\":100,\"y\":200,\"width\":800,\"height\":600}}\n");
     
     // Close connection
     close(sock);

@@ -75,43 +75,41 @@ typedef enum IviOrientation {
  */
 typedef struct IviClient IviClient;
 
-/*
- C-compatible size structure
- */
+typedef uint32_t SuffaceId;
+
 typedef struct IviSize {
-    uint32_t width;
-    uint32_t height;
+    int32_t width;
+    int32_t height;
 } IviSize;
 
-/*
- C-compatible position structure
- */
-typedef struct IviPosition {
+typedef struct Rectangle {
     int32_t x;
     int32_t y;
-} IviPosition;
+    int32_t width;
+    int32_t height;
+} Rectangle;
 
 /*
  C-compatible surface structure
  */
 typedef struct IviSurface {
-    uint32_t id;
+    SuffaceId id;
     struct IviSize orig_size;
-    struct IviPosition src_position;
-    struct IviSize src_size;
-    struct IviPosition dest_position;
-    struct IviSize dest_size;
+    struct Rectangle src_rect;
+    struct Rectangle dest_rect;
     bool visibility;
     float opacity;
     enum IviOrientation orientation;
     int32_t z_order;
 } IviSurface;
 
+typedef uint32_t LayerId;
+
 /*
  C-compatible layer structure
  */
 typedef struct IviLayer {
-    uint32_t id;
+    LayerId id;
     bool visibility;
     float opacity;
 } IviLayer;
@@ -186,34 +184,38 @@ enum IviErrorCode ivi_get_surface(struct IviClient *client,
                                   uintptr_t error_buf_len);
 
 /*
- Set surface position
+ Set surface source rectangle (which part of buffer to display)
 
  # Safety
 
  - `client` must be a valid pointer returned from `ivi_client_connect`
  - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
  */
-enum IviErrorCode ivi_set_surface_position(struct IviClient *client,
-                                           uint32_t id,
-                                           int32_t x,
-                                           int32_t y,
-                                           char *error_buf,
-                                           uintptr_t error_buf_len);
+enum IviErrorCode ivi_set_surface_source_rectangle(struct IviClient *client,
+                                                   uint32_t id,
+                                                   int32_t x,
+                                                   int32_t y,
+                                                   int32_t width,
+                                                   int32_t height,
+                                                   char *error_buf,
+                                                   uintptr_t error_buf_len);
 
 /*
- Set surface size
+ Set surface destination rectangle (where and how to display on screen)
 
  # Safety
 
  - `client` must be a valid pointer returned from `ivi_client_connect`
  - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
  */
-enum IviErrorCode ivi_set_surface_size(struct IviClient *client,
-                                       uint32_t id,
-                                       uint32_t width,
-                                       uint32_t height,
-                                       char *error_buf,
-                                       uintptr_t error_buf_len);
+enum IviErrorCode ivi_set_surface_destination_rectangle(struct IviClient *client,
+                                                        uint32_t id,
+                                                        int32_t x,
+                                                        int32_t y,
+                                                        int32_t width,
+                                                        int32_t height,
+                                                        char *error_buf,
+                                                        uintptr_t error_buf_len);
 
 /*
  Set surface visibility
@@ -242,20 +244,6 @@ enum IviErrorCode ivi_set_surface_opacity(struct IviClient *client,
                                           float opacity,
                                           char *error_buf,
                                           uintptr_t error_buf_len);
-
-/*
- Set surface orientation
-
- # Safety
-
- - `client` must be a valid pointer returned from `ivi_client_connect`
- - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
- */
-enum IviErrorCode ivi_set_surface_orientation(struct IviClient *client,
-                                              uint32_t id,
-                                              enum IviOrientation orientation,
-                                              char *error_buf,
-                                              uintptr_t error_buf_len);
 
 /*
  Set surface z-order
@@ -353,6 +341,40 @@ enum IviErrorCode ivi_set_layer_opacity(struct IviClient *client,
                                         float opacity,
                                         char *error_buf,
                                         uintptr_t error_buf_len);
+
+/*
+ Set layer source rectangle
+
+ # Safety
+
+ - `client` must be a valid pointer returned from `ivi_client_connect`
+ - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
+ */
+enum IviErrorCode ivi_set_layer_source_rectangle(struct IviClient *client,
+                                                 uint32_t id,
+                                                 int32_t x,
+                                                 int32_t y,
+                                                 int32_t width,
+                                                 int32_t height,
+                                                 char *error_buf,
+                                                 uintptr_t error_buf_len);
+
+/*
+ Set layer destination rectangle
+
+ # Safety
+
+ - `client` must be a valid pointer returned from `ivi_client_connect`
+ - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
+ */
+enum IviErrorCode ivi_set_layer_destination_rectangle(struct IviClient *client,
+                                                      uint32_t id,
+                                                      int32_t x,
+                                                      int32_t y,
+                                                      int32_t width,
+                                                      int32_t height,
+                                                      char *error_buf,
+                                                      uintptr_t error_buf_len);
 
 /*
  Commit pending changes

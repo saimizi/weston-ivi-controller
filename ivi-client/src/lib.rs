@@ -106,10 +106,9 @@ pub mod client;
 pub mod error;
 pub mod ffi;
 pub mod protocol;
-pub mod types;
 
 // Re-export main types for convenience
 pub use client::IviClient;
 pub use error::{IviError, Result};
+pub use ffi::*;
 pub use protocol::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
-pub use types::{Layer, Orientation, Position, Size, Surface};

@@ -3,13 +3,45 @@
 //! This module provides C-compatible types and functions for using the IVI client
 //! library from C applications.
 
+use serde::{Deserialize, Serialize};
 use std::ffi::{CStr, CString};
+use std::fmt::Display;
 use std::os::raw::c_char;
 use std::ptr;
 
 use crate::client::IviClient;
 use crate::error::IviError;
-use crate::types::{Layer, Orientation, Position, Size, Surface};
+
+pub type SuffaceId = u32;
+pub type LayerId = u32;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IviSize {
+    pub width: i32,
+    pub height: i32,
+}
+
+impl Display for IviSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}x{}", self.width, self.height)
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Rectangle {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl Display for Rectangle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}x{}@({}, {})", self.width, self.height, self.x, self.y,)
+    }
+}
 
 /// C-compatible error codes
 #[repr(C)]
@@ -31,9 +63,49 @@ pub enum IviErrorCode {
     InvalidParam = -6,
 }
 
+impl From<IviError> for IviErrorCode {
+    fn from(error: IviError) -> Self {
+        match error {
+            IviError::ConnectionFailed(_) => IviErrorCode::ConnectionFailed,
+            IviError::RequestFailed { .. } => IviErrorCode::RequestFailed,
+            IviError::SerializationError(_) => IviErrorCode::Serialization,
+            IviError::DeserializationError(_) => IviErrorCode::Deserialization,
+            IviError::IoError(_) => IviErrorCode::Io,
+        }
+    }
+}
+
+impl From<IviErrorCode> for IviError {
+    fn from(code: IviErrorCode) -> Self {
+        match code {
+            IviErrorCode::ConnectionFailed => {
+                IviError::ConnectionFailed("Connection failed".to_string())
+            }
+            IviErrorCode::RequestFailed => IviError::RequestFailed {
+                code: -1,
+                message: "Request failed".to_string(),
+            },
+            IviErrorCode::Serialization => {
+                IviError::SerializationError("Serialization error".to_string())
+            }
+            IviErrorCode::Deserialization => {
+                IviError::DeserializationError("Deserialization error".to_string())
+            }
+            IviErrorCode::Io => {
+                IviError::IoError(std::io::Error::new(std::io::ErrorKind::Other, "I/O error"))
+            }
+            IviErrorCode::InvalidParam => IviError::IoError(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Invalid parameter",
+            )),
+            IviErrorCode::Ok => panic!("Cannot convert Ok to IviError"),
+        }
+    }
+}
+
 /// C-compatible orientation enum
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum IviOrientation {
     Normal = 0,
     Rotate90 = 1,
@@ -41,157 +113,39 @@ pub enum IviOrientation {
     Rotate270 = 3,
 }
 
-impl From<Orientation> for IviOrientation {
-    fn from(orientation: Orientation) -> Self {
-        match orientation {
-            Orientation::Normal => IviOrientation::Normal,
-            Orientation::Rotate90 => IviOrientation::Rotate90,
-            Orientation::Rotate180 => IviOrientation::Rotate180,
-            Orientation::Rotate270 => IviOrientation::Rotate270,
-        }
-    }
-}
-
-impl From<IviOrientation> for Orientation {
-    fn from(orientation: IviOrientation) -> Self {
-        match orientation {
-            IviOrientation::Normal => Orientation::Normal,
-            IviOrientation::Rotate90 => Orientation::Rotate90,
-            IviOrientation::Rotate180 => Orientation::Rotate180,
-            IviOrientation::Rotate270 => Orientation::Rotate270,
-        }
-    }
-}
-
-/// C-compatible position structure
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct IviPosition {
-    pub x: i32,
-    pub y: i32,
-}
-
-impl From<Position> for IviPosition {
-    fn from(position: Position) -> Self {
-        IviPosition {
-            x: position.x,
-            y: position.y,
-        }
-    }
-}
-
-impl From<IviPosition> for Position {
-    fn from(position: IviPosition) -> Self {
-        Position {
-            x: position.x,
-            y: position.y,
-        }
-    }
-}
-
-/// C-compatible size structure
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct IviSize {
-    pub width: u32,
-    pub height: u32,
-}
-
-impl From<Size> for IviSize {
-    fn from(size: Size) -> Self {
-        IviSize {
-            width: size.width,
-            height: size.height,
-        }
-    }
-}
-
-impl From<IviSize> for Size {
-    fn from(size: IviSize) -> Self {
-        Size {
-            width: size.width,
-            height: size.height,
-        }
+impl Display for IviOrientation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let degrees = match self {
+            IviOrientation::Normal => 0,
+            IviOrientation::Rotate90 => 90,
+            IviOrientation::Rotate180 => 180,
+            IviOrientation::Rotate270 => 270,
+        };
+        write!(f, "{} degrees", degrees)
     }
 }
 
 /// C-compatible surface structure
 #[repr(C)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IviSurface {
-    pub id: u32,
+    pub id: SuffaceId,
     pub orig_size: IviSize,
-    pub src_position: IviPosition,
-    pub src_size: IviSize,
-    pub dest_position: IviPosition,
-    pub dest_size: IviSize,
+    pub src_rect: Rectangle,
+    pub dest_rect: Rectangle,
     pub visibility: bool,
     pub opacity: f32,
     pub orientation: IviOrientation,
     pub z_order: i32,
 }
 
-impl From<Surface> for IviSurface {
-    fn from(surface: Surface) -> Self {
-        IviSurface {
-            id: surface.id,
-            orig_size: surface.orig_size.into(),
-            src_position: surface.src_position.into(),
-            src_size: surface.src_size.into(),
-            dest_position: surface.dest_position.into(),
-            dest_size: surface.dest_size.into(),
-            visibility: surface.visibility,
-            opacity: surface.opacity,
-            orientation: surface.orientation.into(),
-            z_order: surface.z_order,
-        }
-    }
-}
-
-impl From<IviSurface> for Surface {
-    fn from(surface: IviSurface) -> Self {
-        Surface {
-            id: surface.id,
-            orig_size: surface.orig_size.into(),
-            src_position: surface.src_position.into(),
-            src_size: surface.src_size.into(),
-            dest_position: surface.dest_position.into(),
-            dest_size: surface.dest_size.into(),
-            visibility: surface.visibility,
-            opacity: surface.opacity,
-            orientation: surface.orientation.into(),
-            z_order: surface.z_order,
-        }
-    }
-}
-
 /// C-compatible layer structure
 #[repr(C)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IviLayer {
-    pub id: u32,
+    pub id: LayerId,
     pub visibility: bool,
     pub opacity: f32,
-}
-
-impl From<Layer> for IviLayer {
-    fn from(layer: Layer) -> Self {
-        IviLayer {
-            id: layer.id,
-            visibility: layer.visibility,
-            opacity: layer.opacity,
-        }
-    }
-}
-
-impl From<IviLayer> for Layer {
-    fn from(layer: IviLayer) -> Self {
-        Layer {
-            id: layer.id,
-            visibility: layer.visibility,
-            opacity: layer.opacity,
-        }
-    }
 }
 
 /// Helper function to write error message to C buffer
@@ -216,17 +170,6 @@ fn write_error_to_buffer(error: &IviError, error_buf: *mut c_char, error_buf_len
         } else {
             *error_buf.add(error_buf_len - 1) = 0;
         }
-    }
-}
-
-/// Helper function to convert IviError to IviErrorCode
-fn error_to_code(error: &IviError) -> IviErrorCode {
-    match error {
-        IviError::ConnectionFailed(_) => IviErrorCode::ConnectionFailed,
-        IviError::RequestFailed { .. } => IviErrorCode::RequestFailed,
-        IviError::SerializationError(_) => IviErrorCode::Serialization,
-        IviError::DeserializationError(_) => IviErrorCode::Deserialization,
-        IviError::IoError(_) => IviErrorCode::Io,
     }
 }
 
@@ -337,7 +280,7 @@ pub unsafe extern "C" fn ivi_list_surfaces(
         }
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
         }
     }
 }
@@ -375,23 +318,25 @@ pub unsafe extern "C" fn ivi_get_surface(
         }
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
         }
     }
 }
 
-/// Set surface position
+/// Set surface source rectangle (which part of buffer to display)
 ///
 /// # Safety
 ///
 /// - `client` must be a valid pointer returned from `ivi_client_connect`
 /// - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
 #[no_mangle]
-pub unsafe extern "C" fn ivi_set_surface_position(
+pub unsafe extern "C" fn ivi_set_surface_source_rectangle(
     client: *mut IviClient,
     id: u32,
     x: i32,
     y: i32,
+    width: i32,
+    height: i32,
     error_buf: *mut c_char,
     error_buf_len: usize,
 ) -> IviErrorCode {
@@ -401,27 +346,29 @@ pub unsafe extern "C" fn ivi_set_surface_position(
 
     let client = &mut *client;
 
-    match client.set_surface_position(id, x, y) {
+    match client.set_surface_source_rectangle(id, x, y, width, height) {
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
         }
     }
 }
 
-/// Set surface size
+/// Set surface destination rectangle (where and how to display on screen)
 ///
 /// # Safety
 ///
 /// - `client` must be a valid pointer returned from `ivi_client_connect`
 /// - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
 #[no_mangle]
-pub unsafe extern "C" fn ivi_set_surface_size(
+pub unsafe extern "C" fn ivi_set_surface_destination_rectangle(
     client: *mut IviClient,
     id: u32,
-    width: u32,
-    height: u32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
     error_buf: *mut c_char,
     error_buf_len: usize,
 ) -> IviErrorCode {
@@ -431,11 +378,11 @@ pub unsafe extern "C" fn ivi_set_surface_size(
 
     let client = &mut *client;
 
-    match client.set_surface_size(id, width, height) {
+    match client.set_surface_destination_rectangle(id, x, y, width, height) {
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
         }
     }
 }
@@ -464,7 +411,7 @@ pub unsafe extern "C" fn ivi_set_surface_visibility(
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
         }
     }
 }
@@ -493,36 +440,7 @@ pub unsafe extern "C" fn ivi_set_surface_opacity(
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
-        }
-    }
-}
-
-/// Set surface orientation
-///
-/// # Safety
-///
-/// - `client` must be a valid pointer returned from `ivi_client_connect`
-/// - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
-#[no_mangle]
-pub unsafe extern "C" fn ivi_set_surface_orientation(
-    client: *mut IviClient,
-    id: u32,
-    orientation: IviOrientation,
-    error_buf: *mut c_char,
-    error_buf_len: usize,
-) -> IviErrorCode {
-    if client.is_null() {
-        return IviErrorCode::InvalidParam;
-    }
-
-    let client = &mut *client;
-
-    match client.set_surface_orientation(id, orientation.into()) {
-        Ok(_) => IviErrorCode::Ok,
-        Err(err) => {
-            write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
         }
     }
 }
@@ -551,7 +469,7 @@ pub unsafe extern "C" fn ivi_set_surface_z_order(
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
         }
     }
 }
@@ -579,7 +497,7 @@ pub unsafe extern "C" fn ivi_set_surface_focus(
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
         }
     }
 }
@@ -626,7 +544,7 @@ pub unsafe extern "C" fn ivi_list_layers(
         }
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
         }
     }
 }
@@ -664,7 +582,7 @@ pub unsafe extern "C" fn ivi_get_layer(
         }
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
         }
     }
 }
@@ -693,7 +611,7 @@ pub unsafe extern "C" fn ivi_set_layer_visibility(
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
         }
     }
 }
@@ -722,7 +640,71 @@ pub unsafe extern "C" fn ivi_set_layer_opacity(
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
+        }
+    }
+}
+
+/// Set layer source rectangle
+///
+/// # Safety
+///
+/// - `client` must be a valid pointer returned from `ivi_client_connect`
+/// - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
+#[no_mangle]
+pub unsafe extern "C" fn ivi_set_layer_source_rectangle(
+    client: *mut IviClient,
+    id: u32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    error_buf: *mut c_char,
+    error_buf_len: usize,
+) -> IviErrorCode {
+    if client.is_null() {
+        return IviErrorCode::InvalidParam;
+    }
+
+    let client = &mut *client;
+
+    match client.set_layer_source_rectangle(id, x, y, width, height) {
+        Ok(_) => IviErrorCode::Ok,
+        Err(err) => {
+            write_error_to_buffer(&err, error_buf, error_buf_len);
+            err.into()
+        }
+    }
+}
+
+/// Set layer destination rectangle
+///
+/// # Safety
+///
+/// - `client` must be a valid pointer returned from `ivi_client_connect`
+/// - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
+#[no_mangle]
+pub unsafe extern "C" fn ivi_set_layer_destination_rectangle(
+    client: *mut IviClient,
+    id: u32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    error_buf: *mut c_char,
+    error_buf_len: usize,
+) -> IviErrorCode {
+    if client.is_null() {
+        return IviErrorCode::InvalidParam;
+    }
+
+    let client = &mut *client;
+
+    match client.set_layer_destination_rectangle(id, x, y, width, height) {
+        Ok(_) => IviErrorCode::Ok,
+        Err(err) => {
+            write_error_to_buffer(&err, error_buf, error_buf_len);
+            err.into()
         }
     }
 }
@@ -753,7 +735,7 @@ pub unsafe extern "C" fn ivi_commit(
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
-            error_to_code(&err)
+            err.into()
         }
     }
 }
@@ -791,158 +773,5 @@ pub unsafe extern "C" fn ivi_free_layers(layers: *mut IviLayer, count: usize) {
         // Reconstruct the Box with the correct length
         let slice = std::slice::from_raw_parts_mut(layers, count);
         let _ = Box::from_raw(slice);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_orientation_conversion() {
-        assert_eq!(
-            IviOrientation::from(Orientation::Normal),
-            IviOrientation::Normal
-        );
-        assert_eq!(
-            IviOrientation::from(Orientation::Rotate90),
-            IviOrientation::Rotate90
-        );
-        assert_eq!(
-            IviOrientation::from(Orientation::Rotate180),
-            IviOrientation::Rotate180
-        );
-        assert_eq!(
-            IviOrientation::from(Orientation::Rotate270),
-            IviOrientation::Rotate270
-        );
-
-        assert_eq!(
-            Orientation::from(IviOrientation::Normal),
-            Orientation::Normal
-        );
-        assert_eq!(
-            Orientation::from(IviOrientation::Rotate90),
-            Orientation::Rotate90
-        );
-        assert_eq!(
-            Orientation::from(IviOrientation::Rotate180),
-            Orientation::Rotate180
-        );
-        assert_eq!(
-            Orientation::from(IviOrientation::Rotate270),
-            Orientation::Rotate270
-        );
-    }
-
-    #[test]
-    fn test_position_conversion() {
-        let pos = Position { x: 100, y: 200 };
-        let ivi_pos: IviPosition = pos.into();
-        assert_eq!(ivi_pos.x, 100);
-        assert_eq!(ivi_pos.y, 200);
-
-        let pos_back: Position = ivi_pos.into();
-        assert_eq!(pos, pos_back);
-    }
-
-    #[test]
-    fn test_size_conversion() {
-        let size = Size {
-            width: 1920,
-            height: 1080,
-        };
-        let ivi_size: IviSize = size.into();
-        assert_eq!(ivi_size.width, 1920);
-        assert_eq!(ivi_size.height, 1080);
-
-        let size_back: Size = ivi_size.into();
-        assert_eq!(size, size_back);
-    }
-
-    #[test]
-    fn test_surface_conversion() {
-        let surface = Surface {
-            id: 1000,
-            orig_size: Size {
-                width: 1920,
-                height: 1080,
-            },
-            src_position: Position { x: 0, y: 0 },
-            src_size: Size {
-                width: 1920,
-                height: 1080,
-            },
-            dest_position: Position { x: 100, y: 200 },
-            dest_size: Size {
-                width: 1920,
-                height: 1080,
-            },
-            visibility: true,
-            opacity: 1.0,
-            orientation: Orientation::Normal,
-            z_order: 0,
-        };
-
-        let ivi_surface: IviSurface = surface.clone().into();
-        assert_eq!(ivi_surface.id, 1000);
-        assert_eq!(ivi_surface.orig_size.width, 1920);
-        assert_eq!(ivi_surface.orig_size.height, 1080);
-        assert_eq!(ivi_surface.src_position.x, 0);
-        assert_eq!(ivi_surface.src_position.y, 0);
-        assert_eq!(ivi_surface.src_size.width, 1920);
-        assert_eq!(ivi_surface.src_size.height, 1080);
-        assert_eq!(ivi_surface.dest_position.x, 100);
-        assert_eq!(ivi_surface.dest_position.y, 200);
-        assert_eq!(ivi_surface.dest_size.width, 1920);
-        assert_eq!(ivi_surface.dest_size.height, 1080);
-
-        assert_eq!(ivi_surface.visibility, true);
-        assert_eq!(ivi_surface.opacity, 1.0);
-        assert_eq!(ivi_surface.orientation, IviOrientation::Normal);
-        assert_eq!(ivi_surface.z_order, 0);
-
-        let surface_back: Surface = ivi_surface.into();
-        assert_eq!(surface, surface_back);
-    }
-
-    #[test]
-    fn test_layer_conversion() {
-        let layer = Layer {
-            id: 2000,
-            visibility: true,
-            opacity: 0.75,
-        };
-
-        let ivi_layer: IviLayer = layer.clone().into();
-        assert_eq!(ivi_layer.id, 2000);
-        assert_eq!(ivi_layer.visibility, true);
-        assert_eq!(ivi_layer.opacity, 0.75);
-
-        let layer_back: Layer = ivi_layer.into();
-        assert_eq!(layer, layer_back);
-    }
-
-    #[test]
-    fn test_error_to_code() {
-        assert_eq!(
-            error_to_code(&IviError::ConnectionFailed("test".to_string())),
-            IviErrorCode::ConnectionFailed
-        );
-        assert_eq!(
-            error_to_code(&IviError::RequestFailed {
-                code: -32000,
-                message: "test".to_string()
-            }),
-            IviErrorCode::RequestFailed
-        );
-        assert_eq!(
-            error_to_code(&IviError::SerializationError("test".to_string())),
-            IviErrorCode::Serialization
-        );
-        assert_eq!(
-            error_to_code(&IviError::DeserializationError("test".to_string())),
-            IviErrorCode::Deserialization
-        );
     }
 }

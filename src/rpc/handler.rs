@@ -5,6 +5,8 @@ use super::transport::{ClientId, MessageHandler, Transport, TransportError};
 use crate::controller::state::{StateManager, SurfaceState};
 use crate::controller::subscriptions::SubscriptionManager;
 use crate::controller::validation;
+use crate::ffi::bindings::ivi_surface::IviSurface;
+use crate::ffi::bindings::Rectangle;
 #[allow(unused)]
 use jlogger_tracing::{jdebug, jerror, jinfo, jtrace, jwarn, JloggerBuilder, LevelFilter};
 use serde_json::json;
@@ -175,23 +177,32 @@ impl RpcHandler {
         let result = match method {
             RpcMethod::ListSurfaces => self.handle_list_surfaces(),
             RpcMethod::GetSurface { id } => self.handle_get_surface(id),
-            RpcMethod::SetPosition { id, x, y } => self.handle_set_position(id, x, y, auto_commit),
-            RpcMethod::SetSize { id, width, height } => {
-                self.handle_set_size(id, width, height, auto_commit)
+            RpcMethod::SetSurfaceSourceRectangle {
+                id,
+                x,
+                y,
+                width,
+                height,
+            } => self.handle_set_surface_source_rectangle(id, x, y, width, height, auto_commit),
+            RpcMethod::SetSurfaceDestinationRectangle {
+                id,
+                x,
+                y,
+                width,
+                height,
+            } => {
+                self.handle_set_surface_destination_rectangle(id, x, y, width, height, auto_commit)
             }
-            RpcMethod::SetVisibility { id, visible } => {
-                self.handle_set_visibility(id, visible, auto_commit)
+            RpcMethod::SetSurfaceVisibility { id, visible } => {
+                self.handle_set_surface_visibility(id, visible, auto_commit)
             }
-            RpcMethod::SetOpacity { id, opacity } => {
-                self.handle_set_opacity(id, opacity, auto_commit)
+            RpcMethod::SetSurfaceOpacity { id, opacity } => {
+                self.handle_set_surface_opacity(id, opacity, auto_commit)
             }
-            RpcMethod::SetOrientation { id, orientation } => {
-                self.handle_set_orientation(id, orientation, auto_commit)
+            RpcMethod::SetSurfaceZOrder { id, z_order } => {
+                self.handle_set_surface_z_order(id, z_order, auto_commit)
             }
-            RpcMethod::SetZOrder { id, z_order } => {
-                self.handle_set_z_order(id, z_order, auto_commit)
-            }
-            RpcMethod::SetFocus { id } => self.handle_set_focus(id, auto_commit),
+            RpcMethod::SetSurfaceFocus { id } => self.handle_set_surface_focus(id, auto_commit),
             RpcMethod::Commit => self.handle_commit(),
 
             // Subscription methods
@@ -203,7 +214,24 @@ impl RpcHandler {
 
             // Layer methods
             RpcMethod::ListLayers => self.handle_list_layers(),
+            RpcMethod::CreateLayer { id, width, height } => {
+                self.handle_create_layer(id, width, height)
+            }
             RpcMethod::GetLayer { id } => self.handle_get_layer(id),
+            RpcMethod::SetLayerSourceRectangle {
+                id,
+                x,
+                y,
+                width,
+                height,
+            } => self.handle_set_layer_source_rectangle(id, x, y, width, height, auto_commit),
+            RpcMethod::SetLayerDestinationRectangle {
+                id,
+                x,
+                y,
+                width,
+                height,
+            } => self.handle_set_layer_destination_rectangle(id, x, y, width, height, auto_commit),
             RpcMethod::SetLayerVisibility { id, visible } => {
                 self.handle_set_layer_visibility(id, visible, auto_commit)
             }
@@ -252,17 +280,67 @@ impl RpcHandler {
         }
     }
 
-    /// Handle set_position request
-    fn handle_set_position(
+    fn id_to_surface(&self, id: u32) -> Option<IviSurface> {
+        let state_manager = self.state_manager.lock().unwrap();
+
+        let ivi_api = state_manager.ivi_api().clone();
+        ivi_api.get_surface_from_id(id)
+    }
+
+    fn commit_surface_changes(&self, id: u32) -> Result<(), RpcError> {
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+        drop(state_manager);
+
+        ivi_api
+            .commit_changes()
+            .map_err(|e| RpcError::internal_error(e.to_string()))?;
+
+        // Update internal state
+        let mut state_manager = self.state_manager.lock().unwrap();
+        state_manager.handle_surface_configured(id);
+
+        Ok(())
+    }
+
+    fn id_to_layer(&self, id: u32) -> Option<crate::ffi::bindings::ivi_layer::IviLayer> {
+        let state_manager = self.state_manager.lock().unwrap();
+
+        let ivi_api = state_manager.ivi_api().clone();
+        ivi_api.get_layer_from_id(id)
+    }
+
+    fn commit_layer_changes(&self, id: u32) -> Result<(), RpcError> {
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+        drop(state_manager);
+
+        ivi_api
+            .commit_changes()
+            .map_err(|e| RpcError::internal_error(e.to_string()))?;
+
+        // Update internal state
+        let mut state_manager = self.state_manager.lock().unwrap();
+        state_manager.handle_layer_configured(id);
+
+        Ok(())
+    }
+
+    /// Handle set_surface_source_rectangle request
+    fn handle_set_surface_source_rectangle(
         &self,
         id: u32,
         x: i32,
         y: i32,
+        width: i32,
+        height: i32,
         auto_commit: bool,
     ) -> Result<serde_json::Value, RpcError> {
         jdebug!(
-            "Setting position for surface {}: ({}, {}) [auto_commit={}]",
+            "Setting source region for surface {}: {}x{}@({}, {}) [auto_commit={}]",
             id,
+            width,
+            height,
             x,
             y,
             auto_commit
@@ -274,44 +352,33 @@ impl RpcHandler {
             RpcError::invalid_params(e.to_string())
         })?;
 
-        let state_manager = self.state_manager.lock().unwrap();
-
-        // Check if surface exists
-        if !state_manager.has_surface(id) {
-            jwarn!("Surface not found: {}", id);
-            return Err(RpcError::surface_not_found(id));
-        }
-
-        // Get the IVI API and update the surface
-        let ivi_api = state_manager.ivi_api().clone();
-        drop(state_manager); // Release lock before calling IVI API
-
-        let mut surface = ivi_api
-            .get_surface_from_id(id)
-            .ok_or_else(|| RpcError::internal_error(format!("Failed to get IVI surface {}", id)))?;
+        let mut surface = self
+            .id_to_surface(id)
+            .ok_or_else(|| RpcError::surface_not_found(id))?;
 
         surface
-            .set_position(x, y)
+            .set_source_rectangle(Rectangle {
+                x,
+                y,
+                width,
+                height,
+            })
             .map_err(|e| RpcError::internal_error(e))?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
-            ivi_api
-                .commit_changes()
-                .map_err(|e| RpcError::internal_error(e.to_string()))?;
-
-            // Update internal state
-            let mut state_manager = self.state_manager.lock().unwrap();
-            state_manager.handle_surface_configured(id);
+            self.commit_surface_changes(id)?;
         }
 
         Ok(json!({ "success": true, "committed": auto_commit }))
     }
 
-    /// Handle set_size request
-    fn handle_set_size(
+    /// Handle set_surface_destination_rectangle request
+    fn handle_set_surface_destination_rectangle(
         &self,
         id: u32,
+        x: i32,
+        y: i32,
         width: i32,
         height: i32,
         auto_commit: bool,
@@ -324,83 +391,58 @@ impl RpcHandler {
             auto_commit
         );
 
+        // Validate position
+        validation::validate_position(x, y).map_err(|e| RpcError::invalid_params(e.to_string()))?;
         // Validate size
         validation::validate_size(width, height)
             .map_err(|e| RpcError::invalid_params(e.to_string()))?;
 
-        let state_manager = self.state_manager.lock().unwrap();
-
-        // Check if surface exists
-        if !state_manager.has_surface(id) {
-            return Err(RpcError::surface_not_found(id));
-        }
-
-        // Get the IVI API and update the surface
-        let ivi_api = state_manager.ivi_api().clone();
-        drop(state_manager); // Release lock before calling IVI API
-
-        let mut surface = ivi_api
-            .get_surface_from_id(id)
-            .ok_or_else(|| RpcError::internal_error(format!("Failed to get IVI surface {}", id)))?;
+        let mut surface = self
+            .id_to_surface(id)
+            .ok_or_else(|| RpcError::surface_not_found(id))?;
 
         surface
-            .set_size(width, height)
+            .set_destination_rectangle(Rectangle {
+                x,
+                y,
+                width,
+                height,
+            })
             .map_err(|e| RpcError::internal_error(e))?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
-            ivi_api
-                .commit_changes()
-                .map_err(|e| RpcError::internal_error(e.to_string()))?;
-
-            // Update internal state
-            let mut state_manager = self.state_manager.lock().unwrap();
-            state_manager.handle_surface_configured(id);
+            self.commit_surface_changes(id)?;
         }
 
         Ok(json!({ "success": true, "committed": auto_commit }))
     }
 
-    /// Handle set_visibility request
-    fn handle_set_visibility(
+    /// Handle set_surface_visibility request
+    fn handle_set_surface_visibility(
         &self,
         id: u32,
         visible: bool,
         auto_commit: bool,
     ) -> Result<serde_json::Value, RpcError> {
-        let state_manager = self.state_manager.lock().unwrap();
+        let mut surface = self
+            .id_to_surface(id)
+            .ok_or_else(|| RpcError::surface_not_found(id))?;
 
-        // Check if surface exists
-        if !state_manager.has_surface(id) {
-            return Err(RpcError::surface_not_found(id));
-        }
-
-        // Get the IVI API and update the surface
-        let ivi_api = state_manager.ivi_api().clone();
-        drop(state_manager); // Release lock before calling IVI API
-
-        let mut surface = ivi_api
-            .get_surface_from_id(id)
-            .ok_or_else(|| RpcError::internal_error(format!("Failed to get IVI surface {}", id)))?;
-
-        surface.set_visibility(visible);
+        surface
+            .set_visibility(visible)
+            .map_err(|e| RpcError::internal_error(e))?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
-            ivi_api
-                .commit_changes()
-                .map_err(|e| RpcError::internal_error(e.to_string()))?;
-
-            // Update internal state
-            let mut state_manager = self.state_manager.lock().unwrap();
-            state_manager.handle_surface_configured(id);
+            self.commit_surface_changes(id)?;
         }
 
         Ok(json!({ "success": true, "committed": auto_commit }))
     }
 
-    /// Handle set_opacity request
-    fn handle_set_opacity(
+    /// Handle set_surface_opacity request
+    fn handle_set_surface_opacity(
         &self,
         id: u32,
         opacity: f32,
@@ -410,20 +452,9 @@ impl RpcHandler {
         validation::validate_opacity(opacity)
             .map_err(|e| RpcError::invalid_params(e.to_string()))?;
 
-        let state_manager = self.state_manager.lock().unwrap();
-
-        // Check if surface exists
-        if !state_manager.has_surface(id) {
-            return Err(RpcError::surface_not_found(id));
-        }
-
-        // Get the IVI API and update the surface
-        let ivi_api = state_manager.ivi_api().clone();
-        drop(state_manager); // Release lock before calling IVI API
-
-        let mut surface = ivi_api
-            .get_surface_from_id(id)
-            .ok_or_else(|| RpcError::internal_error(format!("Failed to get IVI surface {}", id)))?;
+        let mut surface = self
+            .id_to_surface(id)
+            .ok_or_else(|| RpcError::surface_not_found(id))?;
 
         surface
             .set_opacity(opacity)
@@ -431,41 +462,14 @@ impl RpcHandler {
 
         // Commit changes only if auto_commit is true
         if auto_commit {
-            ivi_api
-                .commit_changes()
-                .map_err(|e| RpcError::internal_error(e.to_string()))?;
-
-            // Update internal state
-            let mut state_manager = self.state_manager.lock().unwrap();
-            state_manager.handle_surface_configured(id);
+            self.commit_surface_changes(id)?;
         }
 
         Ok(json!({ "success": true, "committed": auto_commit }))
     }
 
-    /// Handle set_orientation request
-    fn handle_set_orientation(
-        &self,
-        id: u32,
-        _orientation: crate::controller::state::Orientation,
-        _auto_commit: bool,
-    ) -> Result<serde_json::Value, RpcError> {
-        let state_manager = self.state_manager.lock().unwrap();
-
-        // Check if surface exists
-        if !state_manager.has_surface(id) {
-            return Err(RpcError::surface_not_found(id));
-        }
-
-        // Orientation control is not supported by current IVI API
-        drop(state_manager);
-        Err(RpcError::internal_error(
-            "Orientation control not supported by current IVI API".to_string(),
-        ))
-    }
-
-    /// Handle set_z_order request
-    fn handle_set_z_order(
+    /// Handle set_surface_z_order request
+    fn handle_set_surface_z_order(
         &self,
         id: u32,
         z_order: i32,
@@ -475,20 +479,9 @@ impl RpcHandler {
         validation::validate_z_order(z_order, 0, 1000)
             .map_err(|e| RpcError::invalid_params(e.to_string()))?;
 
-        let state_manager = self.state_manager.lock().unwrap();
-
-        // Check if surface exists
-        if !state_manager.has_surface(id) {
-            return Err(RpcError::surface_not_found(id));
-        }
-
-        // Get the IVI API and update the surface
-        let ivi_api = state_manager.ivi_api().clone();
-        drop(state_manager); // Release lock before calling IVI API
-
-        let mut surface = ivi_api
-            .get_surface_from_id(id)
-            .ok_or_else(|| RpcError::internal_error(format!("Failed to get IVI surface {}", id)))?;
+        let mut surface = self
+            .id_to_surface(id)
+            .ok_or_else(|| RpcError::surface_not_found(id))?;
 
         surface
             .set_z_order(z_order, 0, 1000)
@@ -496,6 +489,10 @@ impl RpcHandler {
 
         // Commit changes only if auto_commit is true
         if auto_commit {
+            let state_manager = self.state_manager.lock().unwrap();
+            let ivi_api = state_manager.ivi_api().clone();
+            drop(state_manager);
+
             ivi_api
                 .commit_changes()
                 .map_err(|e| RpcError::internal_error(e.to_string()))?;
@@ -521,33 +518,21 @@ impl RpcHandler {
         Ok(json!({ "success": true, "committed": auto_commit }))
     }
 
-    /// Handle set_focus request
-    fn handle_set_focus(&self, id: u32, auto_commit: bool) -> Result<serde_json::Value, RpcError> {
+    /// Handle set_surface_focus request
+    fn handle_set_surface_focus(
+        &self,
+        id: u32,
+        auto_commit: bool,
+    ) -> Result<serde_json::Value, RpcError> {
         jdebug!(
             "Setting focus for surface {} [auto_commit={}]",
             id,
             auto_commit
         );
 
-        let mut state_manager = self.state_manager.lock().unwrap();
-
-        // Check if surface exists
-        if !state_manager.has_surface(id) {
-            jwarn!("Surface not found: {}", id);
-            return Err(RpcError::surface_not_found(id));
-        }
-
-        // Get the IVI API and update the surface
-        let ivi_api = state_manager.ivi_api().clone();
-
-        // Update focused surface in state manager (this will emit focus change notification)
-        state_manager.set_focused_surface(Some(id));
-
-        drop(state_manager); // Release lock before calling IVI API
-
-        let mut surface = ivi_api
-            .get_surface_from_id(id)
-            .ok_or_else(|| RpcError::internal_error(format!("Failed to get IVI surface {}", id)))?;
+        let mut surface = self
+            .id_to_surface(id)
+            .ok_or_else(|| RpcError::surface_not_found(id))?;
 
         // Set both keyboard and pointer focus
         surface
@@ -559,6 +544,9 @@ impl RpcHandler {
 
         // Commit changes only if auto_commit is true
         if auto_commit {
+            let state_manager = self.state_manager.lock().unwrap();
+            let ivi_api = state_manager.ivi_api().clone();
+            drop(state_manager);
             ivi_api
                 .commit_changes()
                 .map_err(|e| RpcError::internal_error(e.to_string()))?;
@@ -686,6 +674,34 @@ impl RpcHandler {
         Ok(json!({ "layers": layer_list }))
     }
 
+    fn handle_create_layer(
+        &self,
+        id: u32,
+        width: i32,
+        height: i32,
+    ) -> Result<serde_json::Value, RpcError> {
+        jdebug!("Creating new layer with size {}x{}", width, height);
+
+        // Validate size
+        validation::validate_size(width, height)
+            .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+        drop(state_manager);
+
+        // Create the layer via IVI API
+        let layer = ivi_api
+            .layer_create_with_dimension(id, width, height)
+            .map_err(|e| RpcError::internal_error(e.to_string()))?;
+
+        jinfo!("Created new layer with ID {}", layer.id());
+
+        Ok(json!({
+            "id": layer.id(),
+        }))
+    }
+
     /// Handle get_layer request
     fn handle_get_layer(&self, id: u32) -> Result<serde_json::Value, RpcError> {
         let state_manager = self.state_manager.lock().unwrap();
@@ -704,6 +720,76 @@ impl RpcHandler {
                 Err(RpcError::invalid_params(format!("Layer {} not found", id)))
             }
         }
+    }
+
+    /// Handle set_layer_source_rectangle request
+    fn handle_set_layer_source_rectangle(
+        &self,
+        id: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        auto_commit: bool,
+    ) -> Result<serde_json::Value, RpcError> {
+        validation::validate_position(x, y).map_err(|e| RpcError::invalid_params(e.to_string()))?;
+        validation::validate_size(width, height)
+            .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+
+        let mut layer = self
+            .id_to_layer(id)
+            .ok_or_else(|| RpcError::invalid_params(format!("Layer {} not found", id)))?;
+
+        layer
+            .set_source_rectangle(Rectangle {
+                x,
+                y,
+                width,
+                height,
+            })
+            .map_err(|e| RpcError::internal_error(e))?;
+
+        // Commit changes only if auto_commit is true
+        if auto_commit {
+            self.commit_layer_changes(id)?;
+        }
+
+        Ok(json!({ "success": true, "committed": auto_commit }))
+    }
+
+    /// Handle set_layer_destination_rectangle request
+    fn handle_set_layer_destination_rectangle(
+        &self,
+        id: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        auto_commit: bool,
+    ) -> Result<serde_json::Value, RpcError> {
+        validation::validate_position(x, y).map_err(|e| RpcError::invalid_params(e.to_string()))?;
+        validation::validate_size(width, height)
+            .map_err(|e| RpcError::invalid_params(e.to_string()))?;
+
+        let mut layer = self
+            .id_to_layer(id)
+            .ok_or_else(|| RpcError::invalid_params(format!("Layer {} not found", id)))?;
+
+        layer
+            .set_destination_rectangle(Rectangle {
+                x,
+                y,
+                width,
+                height,
+            })
+            .map_err(|e| RpcError::internal_error(e))?;
+
+        // Commit changes only if auto_commit is true
+        if auto_commit {
+            self.commit_layer_changes(id)?;
+        }
+
+        Ok(json!({ "success": true, "committed": auto_commit }))
     }
 
     /// Handle set_layer_visibility request
@@ -736,7 +822,9 @@ impl RpcHandler {
             .get_layer_from_id(id)
             .ok_or_else(|| RpcError::internal_error(format!("Failed to get IVI layer {}", id)))?;
 
-        layer.set_visibility(visible);
+        layer
+            .set_visibility(visible)
+            .map_err(|e| RpcError::internal_error(e))?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
@@ -813,21 +901,17 @@ fn surface_state_to_json(surface: &SurfaceState) -> serde_json::Value {
             "width": surface.orig_size.0,
             "height": surface.orig_size.1,
         },
-        "src_position": {
-            "x": surface.src_position.0,
-            "y": surface.src_position.1,
+        "src_rect": {
+            "x": surface.src_rect.x,
+            "y": surface.src_rect.y,
+            "width": surface.src_rect.width,
+            "height": surface.src_rect.height,
         },
-        "src_size": {
-            "width": surface.src_size.0,
-            "height": surface.src_size.1,
-        },
-        "dest_position": {
-            "x": surface.dest_position.0,
-            "y": surface.dest_position.1,
-        },
-        "dest_size": {
-            "width": surface.dest_size.0,
-            "height": surface.dest_size.1,
+        "dest_rect": {
+            "x": surface.dest_rect.x,
+            "y": surface.dest_rect.y,
+            "width": surface.dest_rect.width,
+            "height": surface.dest_rect.height,
         },
         "visibility": surface.visibility,
         "opacity": surface.opacity,
@@ -922,7 +1006,7 @@ impl MessageHandler for RpcMessageHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controller::ivi_wrapper::IviLayoutApi;
+    use crate::ffi::bindings::ivi_layout_api::IviLayoutApi;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
     /// Mock transport for testing

@@ -63,25 +63,31 @@ enum SurfaceCommands {
         /// Opacity value (0.0 to 1.0)
         opacity: f32,
     },
-    /// Set surface destination rectangle (position and size)
+    /// Set surface source rectangle (which part of buffer to display)
+    SetSourceRect {
+        /// Surface ID
+        id: u32,
+        /// X coordinate in buffer
+        x: i32,
+        /// Y coordinate in buffer
+        y: i32,
+        /// Width in pixels
+        width: i32,
+        /// Height in pixels
+        height: i32,
+    },
+    /// Set surface destination rectangle (where and how to display on screen)
     SetDestRect {
         /// Surface ID
         id: u32,
-        /// X coordinate
+        /// X coordinate on screen
         x: i32,
-        /// Y coordinate
+        /// Y coordinate on screen
         y: i32,
         /// Width in pixels
-        width: u32,
+        width: i32,
         /// Height in pixels
-        height: u32,
-    },
-    /// Set surface orientation
-    SetOrientation {
-        /// Surface ID
-        id: u32,
-        /// Orientation (normal, rotate90, rotate180, rotate270)
-        orientation: String,
+        height: i32,
     },
     /// Set surface z-order
     SetZOrder {
@@ -106,6 +112,40 @@ enum LayerCommands {
     GetProperties {
         /// Layer ID
         id: u32,
+    },
+    CreateLayer {
+        /// Layer ID
+        id: u32,
+        /// Width in pixels
+        width: i32,
+        /// Height in pixels
+        height: i32,
+    },
+    /// Set layer source rectangle
+    SetSourceRect {
+        /// Layer ID
+        id: u32,
+        /// X coordinate
+        x: i32,
+        /// Y coordinate
+        y: i32,
+        /// Width in pixels
+        width: i32,
+        /// Height in pixels
+        height: i32,
+    },
+    /// Set layer destination rectangle
+    SetDestRect {
+        /// Layer ID
+        id: u32,
+        /// X coordinate
+        x: i32,
+        /// Y coordinate
+        y: i32,
+        /// Width in pixels
+        width: i32,
+        /// Height in pixels
+        height: i32,
     },
     /// Set layer visibility
     SetVisibility {
@@ -145,44 +185,6 @@ fn validate_opacity(opacity: f32) -> Result<(), ValidationError> {
         })
     } else {
         Ok(())
-    }
-}
-
-/// Validate width is positive
-fn validate_width(width: u32) -> Result<(), ValidationError> {
-    if width == 0 {
-        Err(ValidationError {
-            message: "Width must be a positive integer".to_string(),
-        })
-    } else {
-        Ok(())
-    }
-}
-
-/// Validate height is positive
-fn validate_height(height: u32) -> Result<(), ValidationError> {
-    if height == 0 {
-        Err(ValidationError {
-            message: "Height must be a positive integer".to_string(),
-        })
-    } else {
-        Ok(())
-    }
-}
-
-/// Validate orientation string and convert to Orientation enum
-fn validate_orientation(orientation: &str) -> Result<ivi_client::Orientation, ValidationError> {
-    match orientation.to_lowercase().as_str() {
-        "normal" => Ok(ivi_client::Orientation::Normal),
-        "rotate90" => Ok(ivi_client::Orientation::Rotate90),
-        "rotate180" => Ok(ivi_client::Orientation::Rotate180),
-        "rotate270" => Ok(ivi_client::Orientation::Rotate270),
-        _ => Err(ValidationError {
-            message: format!(
-                "Invalid orientation '{}'. Valid values are: normal, rotate90, rotate180, rotate270",
-                orientation
-            ),
-        }),
     }
 }
 
@@ -228,38 +230,33 @@ fn handle_surface_set_opacity(
 }
 
 /// Handle surface set-dest-rect command
+fn handle_surface_set_source_rect(
+    socket_path: &str,
+    id: u32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    client.set_surface_source_rectangle(id, x, y, width, height)?;
+    Ok(output::format_surface_source_rect_success(
+        id, x, y, width, height,
+    ))
+}
+
 fn handle_surface_set_dest_rect(
     socket_path: &str,
     id: u32,
     x: i32,
     y: i32,
-    width: u32,
-    height: u32,
+    width: i32,
+    height: i32,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    validate_width(width)?;
-    validate_height(height)?;
-
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_surface_position(id, x, y)?;
-    client.set_surface_size(id, width, height)?;
+    client.set_surface_destination_rectangle(id, x, y, width, height)?;
     Ok(output::format_surface_dest_rect_success(
         id, x, y, width, height,
-    ))
-}
-
-/// Handle surface set-orientation command
-fn handle_surface_set_orientation(
-    socket_path: &str,
-    id: u32,
-    orientation: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let orientation_enum = validate_orientation(orientation)?;
-
-    let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_surface_orientation(id, orientation_enum)?;
-    Ok(output::format_surface_orientation_success(
-        id,
-        &orientation_enum.to_string(),
     ))
 }
 
@@ -299,6 +296,50 @@ fn handle_layer_get_properties(
     let mut client = ivi_client::IviClient::connect(socket_path)?;
     let layer = client.get_layer(id)?;
     Ok(output::format_layer_properties(&layer))
+}
+
+/// Handle layer create-layer command
+fn handle_layer_create_layer(
+    socket_path: &str,
+    id: u32,
+    width: i32,
+    height: i32,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    client.create_layer(id, width, height, true)?;
+    Ok(output::format_layer_create_success(id))
+}
+
+/// Handle layer set-source-rect command
+fn handle_layer_set_source_rect(
+    socket_path: &str,
+    id: u32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    client.set_layer_source_rectangle(id, x, y, width, height)?;
+    Ok(output::format_layer_source_rect_success(
+        id, x, y, width, height,
+    ))
+}
+
+/// Handle layer set-dest-rect command
+fn handle_layer_set_dest_rect(
+    socket_path: &str,
+    id: u32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    client.set_layer_destination_rectangle(id, x, y, width, height)?;
+    Ok(output::format_layer_dest_rect_success(
+        id, x, y, width, height,
+    ))
 }
 
 /// Handle layer set-visibility command
@@ -345,6 +386,13 @@ fn main() {
             SurfaceCommands::SetOpacity { id, opacity } => {
                 handle_surface_set_opacity(&cli.socket, id, opacity)
             }
+            SurfaceCommands::SetSourceRect {
+                id,
+                x,
+                y,
+                width,
+                height,
+            } => handle_surface_set_source_rect(&cli.socket, id, x, y, width, height),
             SurfaceCommands::SetDestRect {
                 id,
                 x,
@@ -352,9 +400,6 @@ fn main() {
                 width,
                 height,
             } => handle_surface_set_dest_rect(&cli.socket, id, x, y, width, height),
-            SurfaceCommands::SetOrientation { id, orientation } => {
-                handle_surface_set_orientation(&cli.socket, id, &orientation)
-            }
             SurfaceCommands::SetZOrder { id, z_order } => {
                 handle_surface_set_z_order(&cli.socket, id, z_order)
             }
@@ -363,6 +408,23 @@ fn main() {
         Commands::Layer { command } => match command {
             LayerCommands::List => handle_layer_list(&cli.socket),
             LayerCommands::GetProperties { id } => handle_layer_get_properties(&cli.socket, id),
+            LayerCommands::CreateLayer { id, width, height } => {
+                handle_layer_create_layer(&cli.socket, id, width, height)
+            }
+            LayerCommands::SetSourceRect {
+                id,
+                x,
+                y,
+                width,
+                height,
+            } => handle_layer_set_source_rect(&cli.socket, id, x, y, width, height),
+            LayerCommands::SetDestRect {
+                id,
+                x,
+                y,
+                width,
+                height,
+            } => handle_layer_set_dest_rect(&cli.socket, id, x, y, width, height),
             LayerCommands::SetVisibility { id, visible } => {
                 handle_layer_set_visibility(&cli.socket, id, visible)
             }
@@ -402,67 +464,5 @@ mod tests {
         assert!(validate_opacity(1.1).is_err());
         assert!(validate_opacity(-1.0).is_err());
         assert!(validate_opacity(2.0).is_err());
-    }
-
-    #[test]
-    fn test_validate_width_valid() {
-        assert!(validate_width(1).is_ok());
-        assert!(validate_width(1920).is_ok());
-        assert!(validate_width(u32::MAX).is_ok());
-    }
-
-    #[test]
-    fn test_validate_width_invalid() {
-        assert!(validate_width(0).is_err());
-    }
-
-    #[test]
-    fn test_validate_height_valid() {
-        assert!(validate_height(1).is_ok());
-        assert!(validate_height(1080).is_ok());
-        assert!(validate_height(u32::MAX).is_ok());
-    }
-
-    #[test]
-    fn test_validate_height_invalid() {
-        assert!(validate_height(0).is_err());
-    }
-
-    #[test]
-    fn test_validate_orientation_valid() {
-        assert!(validate_orientation("normal").is_ok());
-        assert!(validate_orientation("Normal").is_ok());
-        assert!(validate_orientation("NORMAL").is_ok());
-        assert!(validate_orientation("rotate90").is_ok());
-        assert!(validate_orientation("Rotate90").is_ok());
-        assert!(validate_orientation("rotate180").is_ok());
-        assert!(validate_orientation("rotate270").is_ok());
-    }
-
-    #[test]
-    fn test_validate_orientation_invalid() {
-        assert!(validate_orientation("invalid").is_err());
-        assert!(validate_orientation("rotate45").is_err());
-        assert!(validate_orientation("").is_err());
-    }
-
-    #[test]
-    fn test_validate_orientation_returns_correct_enum() {
-        assert_eq!(
-            validate_orientation("normal").unwrap(),
-            ivi_client::Orientation::Normal
-        );
-        assert_eq!(
-            validate_orientation("rotate90").unwrap(),
-            ivi_client::Orientation::Rotate90
-        );
-        assert_eq!(
-            validate_orientation("rotate180").unwrap(),
-            ivi_client::Orientation::Rotate180
-        );
-        assert_eq!(
-            validate_orientation("rotate270").unwrap(),
-            ivi_client::Orientation::Rotate270
-        );
     }
 }
