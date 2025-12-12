@@ -9,7 +9,7 @@
 //! Usage:
 //!   cargo run --example rust_example
 
-use ivi_client::{IviClient, IviError, Orientation, Result};
+use ivi_client::{IviClient, IviError, Result};
 
 fn main() {
     if let Err(e) = run_example() {
@@ -68,26 +68,9 @@ fn demonstrate_surface_operations(client: &mut IviClient) -> Result<()> {
     println!("  Found {} surface(s):", surfaces.len());
     for surface in &surfaces {
         println!("    Surface ID: {}", surface.id);
-        println!(
-            "      OrigSize: ({}, {})",
-            surface.orig_size.width, surface.orig_size.height
-        );
-        println!(
-            "      SrcPos: ({}, {})",
-            surface.src_position.x, surface.src_position.y
-        );
-        println!(
-            "      SrcSize: {}x{}",
-            surface.src_size.width, surface.src_size.height
-        );
-        println!(
-            "      DestPos: ({}, {})",
-            surface.dest_position.x, surface.dest_position.y
-        );
-        println!(
-            "      DestSize: {}x{}",
-            surface.dest_size.width, surface.dest_size.height
-        );
+        println!("      OrigSize: {}", surface.orig_size);
+        println!("      SrcRect: {}", surface.src_rect);
+        println!("      DestRect: {}", surface.dest_rect);
         println!("      Visibility: {}", surface.visibility);
         println!("      Opacity: {:.2}", surface.opacity);
         println!("      Orientation: {:?}", surface.orientation);
@@ -107,15 +90,10 @@ fn demonstrate_surface_operations(client: &mut IviClient) -> Result<()> {
         // Modify surface properties
         println!("\nModifying surface {} properties...", surface_id);
 
-        // Set position
-        println!("  Setting position to (100, 100)...");
-        client.set_surface_position(surface_id, 100, 100)?;
-        println!("    ✓ Position updated");
-
-        // Set size
-        println!("  Setting size to 800x600...");
-        client.set_surface_size(surface_id, 800, 600)?;
-        println!("    ✓ Size updated");
+        // Set destination rectangle (position and size on screen)
+        println!("  Setting destination rectangle to (100, 100, 800x600)...");
+        client.set_surface_destination_rectangle(surface_id, 100, 100, 800, 600)?;
+        println!("    ✓ Destination rectangle updated");
 
         // Set visibility
         println!("  Setting visibility to true...");
@@ -126,11 +104,6 @@ fn demonstrate_surface_operations(client: &mut IviClient) -> Result<()> {
         println!("  Setting opacity to 0.8...");
         client.set_surface_opacity(surface_id, 0.8)?;
         println!("    ✓ Opacity updated");
-
-        // Set orientation
-        println!("  Setting orientation to Normal...");
-        client.set_surface_orientation(surface_id, Orientation::Normal)?;
-        println!("    ✓ Orientation updated");
 
         // Set z-order
         println!("  Setting z-order to 10...");
@@ -145,26 +118,9 @@ fn demonstrate_surface_operations(client: &mut IviClient) -> Result<()> {
         // Verify changes
         println!("\nVerifying changes...");
         let updated_surface = client.get_surface(surface_id)?;
-        println!(
-            "  OrigSize: {}x{}",
-            updated_surface.orig_size.width, updated_surface.orig_size.height
-        );
-        println!(
-            "  SrcPos: ({}, {})",
-            updated_surface.src_position.x, updated_surface.src_position.y
-        );
-        println!(
-            "  SrcSize: {}x{}",
-            updated_surface.src_size.width, updated_surface.src_size.height
-        );
-        println!(
-            "  DestPos: ({}, {})",
-            updated_surface.dest_position.x, updated_surface.dest_position.y
-        );
-        println!(
-            "  DestSize: {}x{}",
-            updated_surface.dest_size.width, updated_surface.dest_size.height
-        );
+        println!("  OrigSize: {}", updated_surface.orig_size);
+        println!("  SrcRect: {}", updated_surface.src_rect);
+        println!("  DestRect: {}", updated_surface.dest_rect);
         println!("  Opacity: {:.2}", updated_surface.opacity);
         println!("  Visibility: {}", updated_surface.visibility);
     }

@@ -5,7 +5,6 @@ use crate::controller::notifications::{
     LayerVisibilityChangeNotification, Notification, NotificationData, OpacityChangeNotification,
     OrientationChangeNotification, VisibilityChangeNotification, ZOrderChangeNotification,
 };
-use crate::controller::state::Orientation;
 use crate::controller::subscriptions::SubscriptionManager;
 use crate::rpc::protocol::{EventType, RpcNotification};
 use serde_json::json;
@@ -45,21 +44,31 @@ impl NotificationBridge {
                 }),
             ),
 
-            NotificationData::GeometryChange(GeometryChangeNotification {
+            NotificationData::SourceGeometryChange(GeometryChangeNotification {
                 surface_id,
-                old_position,
-                new_position,
-                old_size,
-                new_size,
+                old_rect,
+                new_rect,
             }) => (
-                EventType::GeometryChanged,
+                EventType::SourceGeometryChanged,
                 json!({
-                    "event_type": "GeometryChanged",
+                    "event_type": "SourceGeometryChanged",
                     "surface_id": surface_id,
-                    "old_position": {"x": old_position.0, "y": old_position.1},
-                    "new_position": {"x": new_position.0, "y": new_position.1},
-                    "old_size": {"width": old_size.0, "height": old_size.1},
-                    "new_size": {"width": new_size.0, "height": new_size.1}
+                    "old_rect": {"x": old_rect.x, "y": old_rect.y, "width": old_rect.width, "height": old_rect.height},
+                    "new_rect": {"x": new_rect.x, "y": new_rect.y, "width": new_rect.width, "height": new_rect.height},
+                }),
+            ),
+
+            NotificationData::DestinationGeometryChange(GeometryChangeNotification {
+                surface_id,
+                old_rect,
+                new_rect,
+            }) => (
+                EventType::DestinationGeometryChanged,
+                json!({
+                    "event_type": "DestinationGeometryChanged",
+                    "surface_id": surface_id,
+                    "old_rect": {"x": old_rect.x, "y": old_rect.y, "width": old_rect.width, "height": old_rect.height},
+                    "new_rect": {"x": new_rect.x, "y": new_rect.y, "width": new_rect.width, "height": new_rect.height},
                 }),
             ),
 
@@ -100,8 +109,8 @@ impl NotificationBridge {
                 json!({
                     "event_type": "OrientationChanged",
                     "surface_id": surface_id,
-                    "old_orientation": orientation_to_string(*old_orientation),
-                    "new_orientation": orientation_to_string(*new_orientation)
+                    "old_orientation": (*old_orientation).to_string(),
+                    "new_orientation":(*new_orientation).to_string()
                 }),
             ),
 
@@ -197,21 +206,12 @@ impl NotificationBridge {
     }
 }
 
-/// Helper function to convert Orientation to string representation
-fn orientation_to_string(orientation: Orientation) -> &'static str {
-    match orientation {
-        Orientation::Normal => "Normal",
-        Orientation::Rotate90 => "Rotate90",
-        Orientation::Rotate180 => "Rotate180",
-        Orientation::Rotate270 => "Rotate270",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::controller::notifications::NotificationType;
-    use crate::controller::state::Orientation;
+    use crate::ffi::bindings::Orientation;
+    use crate::ffi::Rectangle;
 
     #[test]
     fn test_convert_surface_created() {
@@ -243,18 +243,26 @@ mod tests {
 
         let notification = Notification {
             notification_type: NotificationType::GeometryChanged,
-            data: NotificationData::GeometryChange(GeometryChangeNotification {
+            data: NotificationData::SourceGeometryChange(GeometryChangeNotification {
                 surface_id: 1000,
-                old_position: (0, 0),
-                new_position: (100, 100),
-                old_size: (1920, 1080),
-                new_size: (1280, 720),
+                old_rect: Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                },
+                new_rect: Rectangle {
+                    x: 100,
+                    y: 100,
+                    width: 1280,
+                    height: 720,
+                },
             }),
         };
 
         let (event_type, rpc_notification) = bridge.convert_notification(&notification);
 
-        assert_eq!(event_type, EventType::GeometryChanged);
+        assert_eq!(event_type, EventType::SourceGeometryChanged);
         assert_eq!(rpc_notification.method, "notification");
 
         let params = rpc_notification.params.as_object().unwrap();
@@ -342,9 +350,9 @@ mod tests {
 
     #[test]
     fn test_orientation_to_string() {
-        assert_eq!(orientation_to_string(Orientation::Normal), "Normal");
-        assert_eq!(orientation_to_string(Orientation::Rotate90), "Rotate90");
-        assert_eq!(orientation_to_string(Orientation::Rotate180), "Rotate180");
-        assert_eq!(orientation_to_string(Orientation::Rotate270), "Rotate270");
+        assert_eq!(Orientation::Normal.to_string(), "Normal");
+        assert_eq!(Orientation::Rotate90.to_string(), "Rotate90");
+        assert_eq!(Orientation::Rotate180.to_string(), "Rotate180");
+        assert_eq!(Orientation::Rotate270.to_string(), "Rotate270");
     }
 }

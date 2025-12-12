@@ -1,5 +1,6 @@
 // Notification system for surface and focus changes
 
+use crate::ffi::bindings::*;
 #[allow(unused)]
 use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
 use std::collections::HashMap;
@@ -41,10 +42,8 @@ pub enum NotificationType {
 #[derive(Debug, Clone)]
 pub struct GeometryChangeNotification {
     pub surface_id: u32,
-    pub old_position: (i32, i32),
-    pub new_position: (i32, i32),
-    pub old_size: (i32, i32),
-    pub new_size: (i32, i32),
+    pub old_rect: Rectangle,
+    pub new_rect: Rectangle,
 }
 
 /// Notification data for focus changes
@@ -74,8 +73,8 @@ pub struct OpacityChangeNotification {
 #[derive(Debug, Clone)]
 pub struct OrientationChangeNotification {
     pub surface_id: u32,
-    pub old_orientation: super::state::Orientation,
-    pub new_orientation: super::state::Orientation,
+    pub old_orientation: Orientation,
+    pub new_orientation: Orientation,
 }
 
 /// Notification data for z-order changes
@@ -102,11 +101,17 @@ pub struct LayerOpacityChangeNotification {
     pub new_opacity: f32,
 }
 
+pub enum GeometryType {
+    Source,
+    Destination,
+}
+
 /// Notification data
 #[derive(Debug, Clone)]
 pub enum NotificationData {
     // Surface notifications
-    GeometryChange(GeometryChangeNotification),
+    SourceGeometryChange(GeometryChangeNotification),
+    DestinationGeometryChange(GeometryChangeNotification),
     FocusChange(FocusChangeNotification),
     SurfaceCreated { surface_id: u32 },
     SurfaceDestroyed { surface_id: u32 },
@@ -173,30 +178,28 @@ impl NotificationManager {
     pub fn emit_geometry_change(
         &self,
         surface_id: u32,
-        old_position: (i32, i32),
-        new_position: (i32, i32),
-        old_size: (i32, i32),
-        new_size: (i32, i32),
+        geometry_type: GeometryType,
+        old_rect: Rectangle,
+        new_rect: Rectangle,
     ) {
-        let notification = Notification {
-            notification_type: NotificationType::GeometryChanged,
-            data: NotificationData::GeometryChange(GeometryChangeNotification {
-                surface_id,
-                old_position,
-                new_position,
-                old_size,
-                new_size,
-            }),
+        let notification = match geometry_type {
+            GeometryType::Source => Notification {
+                notification_type: NotificationType::GeometryChanged,
+                data: NotificationData::SourceGeometryChange(GeometryChangeNotification {
+                    surface_id,
+                    old_rect,
+                    new_rect,
+                }),
+            },
+            GeometryType::Destination => Notification {
+                notification_type: NotificationType::GeometryChanged,
+                data: NotificationData::DestinationGeometryChange(GeometryChangeNotification {
+                    surface_id,
+                    old_rect,
+                    new_rect,
+                }),
+            },
         };
-
-        jdebug!(
-            "Geometry change notification for surface {}: pos ({},{}) -> ({},{}), size ({},{}) -> ({},{})",
-            surface_id,
-            old_position.0, old_position.1,
-            new_position.0, new_position.1,
-            old_size.0, old_size.1,
-            new_size.0, new_size.1
-        );
 
         self.emit(notification);
     }
@@ -295,8 +298,8 @@ impl NotificationManager {
     pub fn emit_orientation_change(
         &self,
         surface_id: u32,
-        old_orientation: super::state::Orientation,
-        new_orientation: super::state::Orientation,
+        old_orientation: Orientation,
+        new_orientation: Orientation,
     ) {
         let notification = Notification {
             notification_type: NotificationType::OrientationChanged,

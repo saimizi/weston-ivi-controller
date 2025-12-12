@@ -1,6 +1,9 @@
 // Event handling for IVI surface lifecycle
 
 use super::state::StateManager;
+use crate::ffi::bindings::ivi_layer::IviLayer;
+use crate::ffi::bindings::ivi_layout_api::IviLayoutApi;
+use crate::ffi::bindings::ivi_surface::IviSurface;
 use crate::ffi::bindings::*;
 #[allow(unused)]
 use jlogger_tracing::{jdebug, jerror, jinfo};
@@ -11,7 +14,7 @@ use std::sync::{Arc, Mutex};
 /// Event listener context that holds a reference to the StateManager
 pub struct EventContext {
     state_manager: Arc<Mutex<StateManager>>,
-    ivi_api: Arc<super::ivi_wrapper::IviLayoutApi>,
+    ivi_api: Arc<IviLayoutApi>,
     surface_prop_listeners: Mutex<HashMap<u32, *mut wl_listener>>, // per-surface property listeners
     layer_prop_listeners: Mutex<HashMap<u32, *mut wl_listener>>,   // per-layer property listeners
 }
@@ -22,10 +25,7 @@ unsafe impl Sync for EventContext {}
 
 impl EventContext {
     /// Create a new event context
-    pub fn new(
-        state_manager: Arc<Mutex<StateManager>>,
-        ivi_api: Arc<super::ivi_wrapper::IviLayoutApi>,
-    ) -> Self {
+    pub fn new(state_manager: Arc<Mutex<StateManager>>, ivi_api: Arc<IviLayoutApi>) -> Self {
         Self {
             state_manager,
             ivi_api,
@@ -43,16 +43,6 @@ impl EventContext {
         }
     }
 
-    /// Helper function to remove listeners from global context map
-    fn cleanup_listener_contexts(listeners: &[*mut wl_listener]) {
-        let mut contexts = LISTENER_CONTEXTS.lock().unwrap();
-        for &listener in listeners {
-            if !listener.is_null() {
-                contexts.remove(&(listener as usize));
-            }
-        }
-    }
-
     /// Register all surface lifecycle event listeners
     ///
     /// # Safety
@@ -61,10 +51,6 @@ impl EventContext {
     /// - The IVI API pointer is valid
     /// - The event context remains alive for the lifetime of the listeners
     pub unsafe fn register_listeners(self: Arc<Self>) -> Result<EventListeners, &'static str> {
-        if self.ivi_api.api.is_null() {
-            return Err("IVI API pointer is null");
-        }
-
         // Allocate opaque wl_listener structures
         // Since wl_listener is opaque, we allocate raw memory for it
         // The actual structure will be managed by Wayland
@@ -119,42 +105,14 @@ impl EventContext {
         (*layer_remove_listener).notify = Some(layer_removed_callback);
 
         // Register listeners with the IVI API
-        if let Some(add_create_fn) = (*self.ivi_api.api).add_listener_create_surface {
-            jdebug!("Registering create surface listener");
-            add_create_fn(create_listener);
-            jdebug!("Registered create surface listener");
-        } else {
-            // Clean up on error
-            Self::cleanup_listeners(&all_listeners);
-            Self::cleanup_listener_contexts(&all_listeners);
-            return Err("add_listener_create_surface not available");
-        }
-
-        if let Some(add_remove_fn) = (*self.ivi_api.api).add_listener_remove_surface {
-            add_remove_fn(remove_listener);
-        } else {
-            // Clean up on error
-            Self::cleanup_listeners(&all_listeners);
-            Self::cleanup_listener_contexts(&all_listeners);
-            return Err("add_listener_remove_surface not available");
-        }
-
-        if let Some(add_configure_fn) = (*self.ivi_api.api).add_listener_configure_surface {
-            add_configure_fn(configure_listener);
-        } else {
-            // Clean up on error
-            Self::cleanup_listeners(&all_listeners);
-            Self::cleanup_listener_contexts(&all_listeners);
-            return Err("add_listener_configure_surface not available");
-        }
-
-        // Register layer listeners if available on this Weston build
-        if let Some(add_create_layer_fn) = (*self.ivi_api.api).add_listener_create_layer {
-            add_create_layer_fn(layer_create_listener);
-        }
-        if let Some(add_remove_layer_fn) = (*self.ivi_api.api).add_listener_remove_layer {
-            add_remove_layer_fn(layer_remove_listener);
-        }
+        self.ivi_api.add_listener_create_surface(create_listener)?;
+        self.ivi_api.add_listener_remove_surface(remove_listener)?;
+        self.ivi_api
+            .add_listener_configure_surface(configure_listener)?;
+        self.ivi_api
+            .add_listener_create_layer(layer_create_listener)?;
+        self.ivi_api
+            .add_listener_remove_layer(layer_remove_listener)?;
 
         Ok(EventListeners {
             ctx: Arc::clone(&self),
@@ -171,22 +129,17 @@ impl EventContext {
         &self,
         surface_id: u32,
     ) -> Result<(), &'static str> {
-        if self.ivi_api.api.is_null() {
-            return Err("IVI API pointer is null");
-        }
-        let get_surface_fn = (*self.ivi_api.api)
-            .get_surface_from_id
-            .ok_or("get_surface_from_id not available")?;
-        let surf = get_surface_fn(surface_id);
-        if surf.is_null() {
-            return Err("Surface not found for property listener");
-        }
+        let surface = self
+            .ivi_api
+            .get_surface_from_id(surface_id)
+            .ok_or("Surface not found for property listener")?;
 
         // Allocate wl_listener and set notify
         let listener = libc::malloc(std::mem::size_of::<wl_listener>()) as *mut wl_listener;
         if listener.is_null() {
             return Err("Failed to allocate surface property listener");
         }
+
         // Zero-initialize to clear wl_list link field
         std::ptr::write_bytes(listener, 0, 1);
         (*listener).notify = Some(surface_property_changed_callback);
@@ -209,12 +162,7 @@ impl EventContext {
             .insert(surface_id, listener);
 
         // Register with IVI API
-        let add_fn = (*self.ivi_api.api)
-            .surface_add_listener
-            .ok_or("surface_add_listener not available")?;
-        add_fn(surf, listener);
-
-        Ok(())
+        self.ivi_api.surface_add_listener(&surface, listener)
     }
 
     /// Remove and free a per-surface property listener by surface id
@@ -250,16 +198,10 @@ impl EventContext {
         &self,
         layer_id: u32,
     ) -> Result<(), &'static str> {
-        if self.ivi_api.api.is_null() {
-            return Err("IVI API pointer is null");
-        }
-        let get_layer_fn = (*self.ivi_api.api)
-            .get_layer_from_id
-            .ok_or("get_layer_from_id not available")?;
-        let layer = get_layer_fn(layer_id);
-        if layer.is_null() {
-            return Err("Layer not found for property listener");
-        }
+        let layer = self
+            .ivi_api
+            .get_layer_from_id(layer_id)
+            .ok_or("Layer not found")?;
 
         // Allocate wl_listener and set notify
         let listener = libc::malloc(std::mem::size_of::<wl_listener>()) as *mut wl_listener;
@@ -287,13 +229,7 @@ impl EventContext {
             .unwrap()
             .insert(layer_id, listener);
 
-        // Register with IVI API
-        let add_fn = (*self.ivi_api.api)
-            .layer_add_listener
-            .ok_or("layer_add_listener not available")?;
-        add_fn(layer, listener);
-
-        Ok(())
+        self.ivi_api.layer_add_listener(&layer, listener)
     }
 
     /// Remove and free a per-layer property listener by layer id
@@ -404,11 +340,12 @@ pub unsafe extern "C" fn surface_created_callback(listener: *mut wl_listener, da
 
     if let Some(context) = context {
         // data is a pointer to ivi_layout_surface
-        let surface = data as *mut ivi_layout_surface;
-
-        // Get the surface ID using the stored API pointer
-        if let Some(get_id_fn) = (*context.ivi_api.api).get_id_of_surface {
-            let surface_id = get_id_fn(surface);
+        if let Some(surface) = IviSurface::new(
+            data as *mut ivi_layout_surface,
+            Arc::clone(&context.ivi_api),
+        ) {
+            // Get the surface ID using the stored API pointer
+            let surface_id = surface.id();
             if let Ok(mut state_manager) = context.state_manager.lock() {
                 state_manager.handle_surface_created(surface_id);
             }
@@ -433,10 +370,11 @@ pub unsafe extern "C" fn surface_removed_callback(listener: *mut wl_listener, da
     };
 
     if let Some(context) = context {
-        let surface = data as *mut ivi_layout_surface;
-
-        if let Some(get_id_fn) = (*context.ivi_api.api).get_id_of_surface {
-            let surface_id = get_id_fn(surface);
+        if let Some(surface) = IviSurface::new(
+            data as *mut ivi_layout_surface,
+            Arc::clone(&context.ivi_api),
+        ) {
+            let surface_id = surface.id();
             if let Ok(mut state_manager) = context.state_manager.lock() {
                 state_manager.handle_surface_destroyed(surface_id);
             }
@@ -462,10 +400,11 @@ pub unsafe extern "C" fn surface_configured_callback(
     };
 
     if let Some(context) = context {
-        let surface = data as *mut ivi_layout_surface;
-
-        if let Some(get_id_fn) = (*context.ivi_api.api).get_id_of_surface {
-            let surface_id = get_id_fn(surface);
+        if let Some(surface) = IviSurface::new(
+            data as *mut ivi_layout_surface,
+            Arc::clone(&context.ivi_api),
+        ) {
+            let surface_id = surface.id();
             if let Ok(mut state_manager) = context.state_manager.lock() {
                 state_manager.handle_surface_configured(surface_id);
             }
@@ -489,10 +428,11 @@ pub unsafe extern "C" fn surface_property_changed_callback(
     };
 
     if let Some(context) = context {
-        let surface = data as *mut ivi_layout_surface;
-
-        if let Some(get_id_fn) = (*context.ivi_api.api).get_id_of_surface {
-            let surface_id = get_id_fn(surface);
+        if let Some(surface) = IviSurface::new(
+            data as *mut ivi_layout_surface,
+            Arc::clone(&context.ivi_api),
+        ) {
+            let surface_id = surface.id();
             if let Ok(mut state_manager) = context.state_manager.lock() {
                 // Recompute and emit property change notifications
                 state_manager.handle_surface_configured(surface_id);
@@ -517,8 +457,8 @@ pub unsafe extern "C" fn layer_created_callback(listener: *mut wl_listener, data
         // data is a pointer to ivi_layout_layer
         let layer = data as *mut ivi_layout_layer;
 
-        if let Some(get_id_fn) = (*context.ivi_api.api).get_id_of_layer {
-            let layer_id = get_id_fn(layer);
+        if let Some(layer) = IviLayer::new(layer, Arc::clone(&context.ivi_api)) {
+            let layer_id = layer.id();
             if let Ok(mut state_manager) = context.state_manager.lock() {
                 state_manager.handle_layer_created(layer_id);
             }
@@ -543,14 +483,14 @@ pub unsafe extern "C" fn layer_removed_callback(listener: *mut wl_listener, data
     };
 
     if let Some(context) = context {
-        let layer = data as *mut ivi_layout_layer;
-
-        if let Some(get_id_fn) = (*context.ivi_api.api).get_id_of_layer {
-            let layer_id = get_id_fn(layer);
+        if let Some(layer) =
+            IviLayer::new(data as *mut ivi_layout_layer, Arc::clone(&context.ivi_api))
+        {
+            let layer_id = layer.id();
             if let Ok(mut state_manager) = context.state_manager.lock() {
                 state_manager.handle_layer_destroyed(layer_id);
             }
-            // Remove and free per-layer listener
+            // Remove and free property listener for this layer
             context.remove_layer_property_listener(layer_id);
         }
     }
@@ -572,11 +512,12 @@ pub unsafe extern "C" fn layer_property_changed_callback(
     };
 
     if let Some(context) = context {
-        let layer = data as *mut ivi_layout_layer;
-
-        if let Some(get_id_fn) = (*context.ivi_api.api).get_id_of_layer {
-            let layer_id = get_id_fn(layer);
+        if let Some(layer) =
+            IviLayer::new(data as *mut ivi_layout_layer, Arc::clone(&context.ivi_api))
+        {
+            let layer_id = layer.id();
             if let Ok(mut state_manager) = context.state_manager.lock() {
+                // Recompute and emit property change notifications
                 state_manager.handle_layer_configured(layer_id);
             }
         }

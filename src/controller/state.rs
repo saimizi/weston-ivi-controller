@@ -1,6 +1,8 @@
 // State management for IVI surfaces
 
-use super::ivi_wrapper::{IviLayoutApi, Orientation as IviOrientation};
+use super::notifications::GeometryType;
+use crate::ffi::bindings::ivi_layout_api::IviLayoutApi;
+use crate::ffi::bindings::*;
 #[allow(unused)]
 use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
 use std::collections::HashMap;
@@ -11,23 +13,12 @@ use std::sync::{Arc, Mutex};
 pub struct SurfaceState {
     pub id: u32,
     pub orig_size: (i32, i32),
-    pub src_position: (i32, i32),
-    pub src_size: (i32, i32),
-    pub dest_position: (i32, i32),
-    pub dest_size: (i32, i32),
+    pub src_rect: Rectangle,
+    pub dest_rect: Rectangle,
     pub visibility: bool,
     pub opacity: f32,
     pub orientation: Orientation,
     pub z_order: i32,
-}
-
-/// Surface orientation
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum Orientation {
-    Normal,    // 0 degrees
-    Rotate90,  // 90 degrees
-    Rotate180, // 180 degrees
-    Rotate270, // 270 degrees
 }
 
 /// Represents the state of an IVI layer
@@ -36,28 +27,6 @@ pub struct LayerState {
     pub id: u32,
     pub visibility: bool,
     pub opacity: f32,
-}
-
-impl From<IviOrientation> for Orientation {
-    fn from(ivi_orientation: IviOrientation) -> Self {
-        match ivi_orientation {
-            IviOrientation::Normal => Orientation::Normal,
-            IviOrientation::Rotate90 => Orientation::Rotate90,
-            IviOrientation::Rotate180 => Orientation::Rotate180,
-            IviOrientation::Rotate270 => Orientation::Rotate270,
-        }
-    }
-}
-
-impl From<Orientation> for IviOrientation {
-    fn from(orientation: Orientation) -> Self {
-        match orientation {
-            Orientation::Normal => IviOrientation::Normal,
-            Orientation::Rotate90 => IviOrientation::Rotate90,
-            Orientation::Rotate180 => IviOrientation::Rotate180,
-            Orientation::Rotate270 => IviOrientation::Rotate270,
-        }
-    }
 }
 
 /// Manages the state of all IVI surfaces and layers
@@ -168,23 +137,32 @@ impl StateManager {
 
         // Populate with current IVI surfaces
         for surface in ivi_surfaces {
-            let id = surface.get_id();
-            let (orig_width, orig_height, _) = surface.get_orig_size();
-            let src_position = surface.get_source_position();
-            let src_size = surface.get_source_size();
-            let dest_position = surface.get_position();
-            let dest_size = surface.get_size();
-            let visibility = surface.get_visibility();
-            let opacity = surface.get_opacity();
-            let orientation = surface.get_orientation().into();
+            let id = surface.id();
+            let (orig_width, orig_height) = surface.orig_size();
+            let src_rect;
+            let dest_rect;
+
+            if let Some(s) = surface.source_rectangle() {
+                src_rect = s;
+            } else {
+                continue; // Skip surfaces without source rectangle
+            }
+
+            if let Some(d) = surface.destination_rectangle() {
+                dest_rect = d;
+            } else {
+                continue; // Skip surfaces without destination rectangle
+            }
+
+            let visibility = surface.visibility();
+            let opacity = surface.opacity();
+            let orientation = surface.orientation().into();
 
             let state = SurfaceState {
                 id,
                 orig_size: (orig_width, orig_height),
-                src_position,
-                src_size,
-                dest_position,
-                dest_size,
+                src_rect,
+                dest_rect,
                 visibility,
                 opacity,
                 orientation,
@@ -218,22 +196,31 @@ impl StateManager {
     pub fn handle_surface_created(&mut self, surface_id: u32) {
         // Query the IVI API for the new surface
         if let Some(surface) = self.ivi_api.get_surface_from_id(surface_id) {
-            let (orig_width, orig_height, _) = surface.get_orig_size();
-            let src_position = surface.get_source_position();
-            let src_size = surface.get_source_size();
-            let dest_position = surface.get_position();
-            let dest_size = surface.get_size();
-            let visibility = surface.get_visibility();
-            let opacity = surface.get_opacity();
-            let orientation = surface.get_orientation().into();
+            let (orig_width, orig_height) = surface.orig_size();
+            let src_rect;
+            let dest_rect;
+
+            if let Some(s) = surface.source_rectangle() {
+                src_rect = s;
+            } else {
+                return; // Cannot create state without source rectangle
+            }
+
+            if let Some(d) = surface.destination_rectangle() {
+                dest_rect = d;
+            } else {
+                return; // Cannot create state without destination rectangle
+            }
+
+            let visibility = surface.visibility();
+            let opacity = surface.opacity();
+            let orientation = surface.orientation().into();
 
             let state = SurfaceState {
                 id: surface_id,
                 orig_size: (orig_width, orig_height),
-                src_position,
-                src_size,
-                dest_position,
-                dest_size,
+                src_rect,
+                dest_rect,
                 visibility,
                 opacity,
                 orientation,
@@ -278,14 +265,25 @@ impl StateManager {
 
         // Query the IVI API for updated surface properties
         if let Some(surface) = self.ivi_api.get_surface_from_id(surface_id) {
-            let (orig_width, orig_height, _) = surface.get_orig_size();
-            let src_position = surface.get_source_position();
-            let src_size = surface.get_source_size();
-            let dest_position = surface.get_position();
-            let dest_size = surface.get_size();
-            let visibility = surface.get_visibility();
-            let opacity = surface.get_opacity();
-            let orientation = surface.get_orientation().into();
+            let (orig_width, orig_height) = surface.orig_size();
+            let src_rect;
+            let dest_rect;
+
+            if let Some(s) = surface.source_rectangle() {
+                src_rect = s;
+            } else {
+                return; // Cannot update state without source rectangle
+            }
+
+            if let Some(d) = surface.destination_rectangle() {
+                dest_rect = d;
+            } else {
+                return; // Cannot update state without destination rectangle
+            }
+
+            let visibility = surface.visibility();
+            let opacity = surface.opacity();
+            let orientation = surface.orientation().into();
 
             // Get existing z_order or default to 0
             let z_order = old_state.as_ref().map(|s| s.z_order).unwrap_or(0);
@@ -293,10 +291,8 @@ impl StateManager {
             let new_state = SurfaceState {
                 id: surface_id,
                 orig_size: (orig_width, orig_height),
-                src_position,
-                src_size,
-                dest_position,
-                dest_size,
+                src_rect,
+                dest_rect,
                 visibility,
                 opacity,
                 orientation,
@@ -306,7 +302,7 @@ impl StateManager {
             // Check property changes and emit notifications
             if let Some(old) = old_state {
                 // Try to filter using event_mask (0 means unknown/no filter)
-                let event_mask = surface.get_event_mask();
+                let event_mask = surface.event_mask();
                 if event_mask == 0 {
                     self.emit_surface_property_changes(surface_id, &old, &new_state);
                 } else {
@@ -325,48 +321,50 @@ impl StateManager {
         &self,
         surface_id: u32,
         old: &SurfaceState,
-        new_state: &SurfaceState,
+        new: &SurfaceState,
     ) {
-        // Geometry (any position or size change)
-        if old.src_position != new_state.src_position
-            || old.src_size != new_state.src_size
-            || old.dest_position != new_state.dest_position
-            || old.dest_size != new_state.dest_size
-        {
-            let notification_manager = self.notification_manager.lock().unwrap();
-            notification_manager.emit_geometry_change(
-                surface_id,
-                old.dest_position,
-                new_state.dest_position,
-                old.dest_size,
-                new_state.dest_size,
-            );
-        }
+        if let Ok(notification_manager) = self.notification_manager.lock() {
+            // Geometry (any position or size change)
+            if old.src_rect != new.src_rect {
+                notification_manager.emit_geometry_change(
+                    surface_id,
+                    GeometryType::Source,
+                    old.src_rect,
+                    new.src_rect,
+                );
+            }
 
-        // Visibility
-        if old.visibility != new_state.visibility {
-            let notification_manager = self.notification_manager.lock().unwrap();
-            notification_manager.emit_visibility_change(
-                surface_id,
-                old.visibility,
-                new_state.visibility,
-            );
-        }
+            if old.dest_rect != new.dest_rect {
+                notification_manager.emit_geometry_change(
+                    surface_id,
+                    GeometryType::Destination,
+                    old.dest_rect,
+                    new.dest_rect,
+                );
+            }
 
-        // Opacity
-        if (old.opacity - new_state.opacity).abs() > f32::EPSILON {
-            let notification_manager = self.notification_manager.lock().unwrap();
-            notification_manager.emit_opacity_change(surface_id, old.opacity, new_state.opacity);
-        }
+            // Visibility
+            if old.visibility != new.visibility {
+                notification_manager.emit_visibility_change(
+                    surface_id,
+                    old.visibility,
+                    new.visibility,
+                );
+            }
 
-        // Orientation
-        if old.orientation != new_state.orientation {
-            let notification_manager = self.notification_manager.lock().unwrap();
-            notification_manager.emit_orientation_change(
-                surface_id,
-                old.orientation,
-                new_state.orientation,
-            );
+            // Opacity
+            if (old.opacity - new.opacity).abs() > f32::EPSILON {
+                notification_manager.emit_opacity_change(surface_id, old.opacity, new.opacity);
+            }
+
+            // Orientation
+            if old.orientation != new.orientation {
+                notification_manager.emit_orientation_change(
+                    surface_id,
+                    old.orientation,
+                    new.orientation,
+                );
+            }
         }
     }
 
@@ -375,57 +373,64 @@ impl StateManager {
         &self,
         surface_id: u32,
         old: &SurfaceState,
-        new_state: &SurfaceState,
+        new: &SurfaceState,
         event_mask: u32,
     ) {
-        // Bit definitions from ivi_layout_notification_mask
-        const NOTIF_OPACITY: u32 = 1 << 1;
-        const NOTIF_DEST_RECT: u32 = 1 << 3;
-        const NOTIF_DIMENSION: u32 = 1 << 4;
-        const NOTIF_POSITION: u32 = 1 << 5;
-        const NOTIF_ORIENTATION: u32 = 1 << 6;
-        const NOTIF_VISIBILITY: u32 = 1 << 7;
         let has = |bit: u32| (event_mask & (bit as u32)) != 0;
-
-        // Geometry
-        if has(NOTIF_POSITION) || has(NOTIF_DEST_RECT) || has(NOTIF_DIMENSION) {
-            if old.src_position != new_state.src_position
-                || old.src_size != new_state.src_size
-                || old.dest_position != new_state.dest_position
-                || old.dest_size != new_state.dest_size
+        if let Ok(notification_manager) = self.notification_manager.lock() {
+            // Geometry
+            if has(NotificationMask::Position.into())
+                || has(NotificationMask::SourceRect.into())
+                || has(NotificationMask::DestRect.into())
+                || has(NotificationMask::Dimension.into())
             {
-                let nm = self.notification_manager.lock().unwrap();
-                nm.emit_geometry_change(
-                    surface_id,
-                    old.dest_position,
-                    new_state.dest_position,
-                    old.dest_size,
-                    new_state.dest_size,
-                );
-            }
-        }
+                // Geometry (any position or size change)
+                if old.src_rect != new.src_rect {
+                    notification_manager.emit_geometry_change(
+                        surface_id,
+                        GeometryType::Source,
+                        old.src_rect,
+                        new.src_rect,
+                    );
+                }
 
-        // Visibility
-        if has(NOTIF_VISIBILITY) {
-            if old.visibility != new_state.visibility {
-                let nm = self.notification_manager.lock().unwrap();
-                nm.emit_visibility_change(surface_id, old.visibility, new_state.visibility);
+                if old.dest_rect != new.dest_rect {
+                    notification_manager.emit_geometry_change(
+                        surface_id,
+                        GeometryType::Destination,
+                        old.dest_rect,
+                        new.dest_rect,
+                    );
+                }
             }
-        }
 
-        // Opacity
-        if has(NOTIF_OPACITY) {
-            if (old.opacity - new_state.opacity).abs() > f32::EPSILON {
-                let nm = self.notification_manager.lock().unwrap();
-                nm.emit_opacity_change(surface_id, old.opacity, new_state.opacity);
+            // Visibility
+            if has(NotificationMask::Visibility.into()) {
+                if old.visibility != new.visibility {
+                    notification_manager.emit_visibility_change(
+                        surface_id,
+                        old.visibility,
+                        new.visibility,
+                    );
+                }
             }
-        }
 
-        // Orientation
-        if has(NOTIF_ORIENTATION) {
-            if old.orientation != new_state.orientation {
-                let nm = self.notification_manager.lock().unwrap();
-                nm.emit_orientation_change(surface_id, old.orientation, new_state.orientation);
+            // Opacity
+            if has(NotificationMask::Opacity.into()) {
+                if (old.opacity - new.opacity).abs() > f32::EPSILON {
+                    notification_manager.emit_opacity_change(surface_id, old.opacity, new.opacity);
+                }
+            }
+
+            // Orientation
+            if has(NotificationMask::Orientation.into()) {
+                if old.orientation != new.orientation {
+                    notification_manager.emit_orientation_change(
+                        surface_id,
+                        old.orientation,
+                        new.orientation,
+                    );
+                }
             }
         }
     }
@@ -482,8 +487,8 @@ impl StateManager {
     pub fn handle_layer_created(&mut self, layer_id: u32) {
         // Query the IVI API for the new layer
         if let Some(layer) = self.ivi_api.get_layer_from_id(layer_id) {
-            let visibility = layer.get_visibility();
-            let opacity = layer.get_opacity();
+            let visibility = layer.visibility();
+            let opacity = layer.opacity();
 
             let state = LayerState {
                 id: layer_id,
@@ -517,9 +522,9 @@ impl StateManager {
 
         // Query the IVI API for updated layer properties
         if let Some(layer) = self.ivi_api.get_layer_from_id(layer_id) {
-            let event_mask = layer.get_event_mask();
-            let visibility = layer.get_visibility();
-            let opacity = layer.get_opacity();
+            let event_mask = layer.event_mask();
+            let visibility = layer.visibility();
+            let opacity = layer.opacity();
 
             let new_state = LayerState {
                 id: layer_id,
@@ -561,8 +566,8 @@ impl StateManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controller::ivi_wrapper::IviLayoutApi;
     use crate::controller::notifications::{Notification, NotificationType};
+    use crate::ffi::bindings::ivi_layout_api::IviLayoutApi;
     use std::sync::{Arc, Mutex};
 
     fn make_state_manager() -> StateManager {
@@ -598,10 +603,18 @@ mod tests {
         let old = SurfaceState {
             id: 42,
             orig_size: (100, 100),
-            src_position: (0, 0),
-            src_size: (100, 100),
-            dest_position: (0, 0),
-            dest_size: (100, 100),
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
             visibility: false,
             opacity: 1.0,
             orientation: Orientation::Normal,
@@ -610,10 +623,18 @@ mod tests {
         let new_state = SurfaceState {
             id: 42,
             orig_size: (100, 100),
-            src_position: (10, 10),
-            src_size: (100, 100),
-            dest_position: (0, 0),
-            dest_size: (200, 200),
+            src_rect: Rectangle {
+                x: 10,
+                y: 10,
+                width: 100,
+                height: 100,
+            },
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 200,
+            },
             visibility: true,
             opacity: 0.5,
             orientation: Orientation::Rotate90,
@@ -687,10 +708,18 @@ mod tests {
         let old = SurfaceState {
             id: 1,
             orig_size: (200, 150),
-            src_position: (10, 10),
-            src_size: (200, 150),
-            dest_position: (10, 10),
-            dest_size: (200, 150),
+            src_rect: Rectangle {
+                x: 10,
+                y: 10,
+                width: 200,
+                height: 150,
+            },
+            dest_rect: Rectangle {
+                x: 10,
+                y: 10,
+                width: 200,
+                height: 150,
+            },
             visibility: true,
             opacity: 0.75,
             orientation: Orientation::Normal,

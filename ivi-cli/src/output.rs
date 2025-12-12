@@ -3,7 +3,7 @@
 //! This module provides functions to format CLI output in a consistent,
 //! human-readable manner.
 
-use ivi_client::{Layer, Surface};
+use ivi_client::{IviLayer, IviSurface};
 
 /// Format a list of surface IDs as a comma-separated string
 ///
@@ -22,7 +22,7 @@ use ivi_client::{Layer, Surface};
 /// let output = format_surface_list(&surfaces);
 /// assert_eq!(output, "Surface IDs: 1000, 1001");
 /// ```
-pub fn format_surface_list(surfaces: &[Surface]) -> String {
+pub fn format_surface_list(surfaces: &[IviSurface]) -> String {
     if surfaces.is_empty() {
         "No surfaces available".to_string()
     } else {
@@ -48,7 +48,7 @@ pub fn format_surface_list(surfaces: &[Surface]) -> String {
 /// let output = format_layer_list(&layers);
 /// assert_eq!(output, "Layer IDs: 2000, 2001");
 /// ```
-pub fn format_layer_list(layers: &[Layer]) -> String {
+pub fn format_layer_list(layers: &[IviLayer]) -> String {
     if layers.is_empty() {
         "No layers available".to_string()
     } else {
@@ -57,10 +57,14 @@ pub fn format_layer_list(layers: &[Layer]) -> String {
     }
 }
 
+pub fn format_layer_create_success(id: u32) -> String {
+    format_success(&format!("Layer {} created", id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ivi_client::{Orientation, Position, Size};
+    use ivi_client::{IviOrientation, IviSize, Rectangle};
 
     #[test]
     fn test_format_surface_list_empty() {
@@ -70,25 +74,27 @@ mod tests {
 
     #[test]
     fn test_format_surface_list_single() {
-        let surfaces = vec![Surface {
+        let surfaces = vec![IviSurface {
             id: 1000,
-            orig_size: Size {
+            orig_size: IviSize {
                 width: 100,
                 height: 100,
             },
-            src_position: Position { x: 0, y: 0 },
-            src_size: Size {
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
                 width: 100,
                 height: 100,
             },
-            dest_position: Position { x: 0, y: 0 },
-            dest_size: Size {
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
                 width: 100,
                 height: 100,
             },
             visibility: true,
             opacity: 1.0,
-            orientation: Orientation::Normal,
+            orientation: IviOrientation::Normal,
             z_order: 0,
         }];
         assert_eq!(format_surface_list(&surfaces), "Surface IDs: 1000");
@@ -97,67 +103,73 @@ mod tests {
     #[test]
     fn test_format_surface_list_multiple() {
         let surfaces = vec![
-            Surface {
+            IviSurface {
                 id: 1000,
-                orig_size: Size {
+                orig_size: IviSize {
                     width: 100,
                     height: 100,
                 },
-                src_position: Position { x: 0, y: 0 },
-                src_size: Size {
+                src_rect: Rectangle {
+                    x: 0,
+                    y: 0,
                     width: 100,
                     height: 100,
                 },
-                dest_position: Position { x: 0, y: 0 },
-                dest_size: Size {
+                dest_rect: Rectangle {
+                    x: 0,
+                    y: 0,
                     width: 100,
                     height: 100,
                 },
                 visibility: true,
                 opacity: 1.0,
-                orientation: Orientation::Normal,
+                orientation: IviOrientation::Normal,
                 z_order: 0,
             },
-            Surface {
+            IviSurface {
                 id: 1001,
-                orig_size: Size {
+                orig_size: IviSize {
                     width: 200,
                     height: 200,
                 },
-                src_position: Position { x: 0, y: 0 },
-                src_size: Size {
+                src_rect: Rectangle {
+                    x: 0,
+                    y: 0,
                     width: 200,
                     height: 200,
                 },
-                dest_position: Position { x: 0, y: 0 },
-                dest_size: Size {
+                dest_rect: Rectangle {
+                    x: 0,
+                    y: 0,
                     width: 200,
                     height: 200,
                 },
                 visibility: false,
                 opacity: 0.5,
-                orientation: Orientation::Rotate90,
+                orientation: IviOrientation::Rotate90,
                 z_order: 1,
             },
-            Surface {
+            IviSurface {
                 id: 1002,
-                orig_size: Size {
+                orig_size: IviSize {
                     width: 300,
                     height: 300,
                 },
-                src_position: Position { x: 0, y: 0 },
-                src_size: Size {
+                src_rect: Rectangle {
+                    x: 0,
+                    y: 0,
                     width: 300,
                     height: 300,
                 },
-                dest_position: Position { x: 0, y: 0 },
-                dest_size: Size {
+                dest_rect: Rectangle {
+                    x: 0,
+                    y: 0,
                     width: 300,
                     height: 300,
                 },
                 visibility: true,
                 opacity: 0.75,
-                orientation: Orientation::Rotate180,
+                orientation: IviOrientation::Rotate180,
                 z_order: 2,
             },
         ];
@@ -175,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_format_layer_list_single() {
-        let layers = vec![Layer {
+        let layers = vec![IviLayer {
             id: 2000,
             visibility: true,
             opacity: 1.0,
@@ -186,17 +198,17 @@ mod tests {
     #[test]
     fn test_format_layer_list_multiple() {
         let layers = vec![
-            Layer {
+            IviLayer {
                 id: 2000,
                 visibility: true,
                 opacity: 1.0,
             },
-            Layer {
+            IviLayer {
                 id: 2001,
                 visibility: false,
                 opacity: 0.5,
             },
-            Layer {
+            IviLayer {
                 id: 2002,
                 visibility: true,
                 opacity: 0.75,
@@ -227,15 +239,13 @@ mod tests {
 /// };
 /// let output = format_surface_properties(&surface);
 /// ```
-pub fn format_surface_properties(surface: &Surface) -> String {
+pub fn format_surface_properties(surface: &IviSurface) -> String {
     format!(
-        "Surface {}:\n  OrigSize: {}\n  SrcPos: {}\n  SrcSize: {}\n  DestPos: {}\n  DestSize: {}\n  Visibility: {}\n  Opacity: {:.2}\n  Orientation: {}\n  Z-Order: {}",
+        "Surface {}:\n  OrigSize: {}\n  SrcRect: {}\n  DestRect: {}\n Visibility: {}\n  Opacity: {:.2}\n  Orientation: {}\n  Z-Order: {}",
         surface.id,
         surface.orig_size,
-        surface.src_position,
-        surface.src_size,
-        surface.dest_position,
-        surface.dest_size,
+        surface.src_rect,
+        surface.dest_rect,
         surface.visibility,
         surface.opacity,
         surface.orientation,
@@ -260,7 +270,7 @@ pub fn format_surface_properties(surface: &Surface) -> String {
 /// };
 /// let output = format_layer_properties(&layer);
 /// ```
-pub fn format_layer_properties(layer: &Layer) -> String {
+pub fn format_layer_properties(layer: &IviLayer) -> String {
     format!(
         "Layer {}:\n  Visibility: {}\n  Opacity: {:.2}",
         layer.id, layer.visibility, layer.opacity
@@ -270,39 +280,39 @@ pub fn format_layer_properties(layer: &Layer) -> String {
 #[cfg(test)]
 mod properties_tests {
     use super::*;
-    use ivi_client::{Orientation, Position, Size};
+    use ivi_client::{IviOrientation, IviSize, Rectangle};
 
     #[test]
     fn test_format_surface_properties() {
-        let surface = Surface {
+        let surface = IviSurface {
             id: 1000,
-            orig_size: Size {
+            orig_size: IviSize {
                 width: 1920,
                 height: 1080,
             },
-            src_position: Position { x: 0, y: 0 },
-            src_size: Size {
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
                 width: 1920,
                 height: 1080,
             },
-            dest_position: Position { x: 100, y: 200 },
-            dest_size: Size {
+            dest_rect: Rectangle {
+                x: 100,
+                y: 200,
                 width: 1920,
                 height: 1080,
             },
             visibility: true,
             opacity: 1.0,
-            orientation: Orientation::Normal,
+            orientation: IviOrientation::Normal,
             z_order: 0,
         };
 
         let output = format_surface_properties(&surface);
         assert!(output.contains("Surface 1000:"));
         assert!(output.contains("OrigSize: 1920x1080"));
-        assert!(output.contains("SrcPos: (0, 0)"));
-        assert!(output.contains("SrcSize: 1920x1080"));
-        assert!(output.contains("DestPos: (100, 200)"));
-        assert!(output.contains("DestSize: 1920x1080"));
+        assert!(output.contains("SrcRect: 1920x1080@(0, 0)"));
+        assert!(output.contains("DestRect: 1920x1080@(100, 200)"));
         assert!(output.contains("Visibility: true"));
         assert!(output.contains("Opacity: 1.00"));
         assert!(output.contains("Orientation: Normal"));
@@ -311,35 +321,35 @@ mod properties_tests {
 
     #[test]
     fn test_format_surface_properties_with_rotation() {
-        let surface = Surface {
+        let surface = IviSurface {
             id: 1001,
-            orig_size: Size {
+            orig_size: IviSize {
                 width: 800,
                 height: 600,
             },
-            src_position: Position { x: 0, y: 0 },
-            src_size: Size {
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
                 width: 800,
                 height: 600,
             },
-            dest_position: Position { x: -50, y: -100 },
-            dest_size: Size {
+            dest_rect: Rectangle {
+                x: -50,
+                y: -100,
                 width: 1280,
                 height: 720,
             },
             visibility: false,
             opacity: 0.5,
-            orientation: Orientation::Rotate90,
+            orientation: IviOrientation::Rotate90,
             z_order: -1,
         };
 
         let output = format_surface_properties(&surface);
         assert!(output.contains("Surface 1001:"));
         assert!(output.contains("OrigSize: 800x600"));
-        assert!(output.contains("SrcPos: (0, 0)"));
-        assert!(output.contains("SrcSize: 800x600"));
-        assert!(output.contains("DestPos: (-50, -100)"));
-        assert!(output.contains("DestSize: 1280x720"));
+        assert!(output.contains("SrcRect: 800x600@(0, 0)"));
+        assert!(output.contains("DestRect: 1280x720@(-50, -100)"));
         assert!(output.contains("Visibility: false"));
         assert!(output.contains("Opacity: 0.50"));
         assert!(output.contains("Orientation: Rotate90"));
@@ -348,25 +358,27 @@ mod properties_tests {
 
     #[test]
     fn test_format_surface_properties_opacity_precision() {
-        let surface = Surface {
+        let surface = IviSurface {
             id: 1002,
-            orig_size: Size {
+            orig_size: IviSize {
                 width: 100,
                 height: 100,
             },
-            src_position: Position { x: 0, y: 0 },
-            src_size: Size {
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
                 width: 100,
                 height: 100,
             },
-            dest_position: Position { x: 0, y: 0 },
-            dest_size: Size {
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
                 width: 100,
                 height: 100,
             },
             visibility: true,
             opacity: 0.123456,
-            orientation: Orientation::Normal,
+            orientation: IviOrientation::Normal,
             z_order: 0,
         };
 
@@ -377,7 +389,7 @@ mod properties_tests {
 
     #[test]
     fn test_format_layer_properties() {
-        let layer = Layer {
+        let layer = IviLayer {
             id: 2000,
             visibility: true,
             opacity: 1.0,
@@ -391,7 +403,7 @@ mod properties_tests {
 
     #[test]
     fn test_format_layer_properties_partial_opacity() {
-        let layer = Layer {
+        let layer = IviLayer {
             id: 2001,
             visibility: false,
             opacity: 0.75,
@@ -405,7 +417,7 @@ mod properties_tests {
 
     #[test]
     fn test_format_layer_properties_opacity_precision() {
-        let layer = Layer {
+        let layer = IviLayer {
             id: 2002,
             visibility: true,
             opacity: 0.987654,
@@ -461,25 +473,31 @@ pub fn format_surface_opacity_success(id: u32, opacity: f32) -> String {
     format_success(&format!("Surface {} opacity set to {:.2}", id, opacity))
 }
 
+/// Format a success message for setting surface source rectangle
+pub fn format_surface_source_rect_success(
+    id: u32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> String {
+    format_success(&format!(
+        "Surface {} source rectangle set to position ({}, {}) and size {}x{}",
+        id, x, y, width, height
+    ))
+}
+
 /// Format a success message for setting surface destination rectangle
 pub fn format_surface_dest_rect_success(
     id: u32,
     x: i32,
     y: i32,
-    width: u32,
-    height: u32,
+    width: i32,
+    height: i32,
 ) -> String {
     format_success(&format!(
         "Surface {} destination rectangle set to position ({}, {}) and size {}x{}",
         id, x, y, width, height
-    ))
-}
-
-/// Format a success message for setting surface orientation
-pub fn format_surface_orientation_success(id: u32, orientation: &str) -> String {
-    format_success(&format!(
-        "Surface {} orientation set to {}",
-        id, orientation
     ))
 }
 
@@ -501,6 +519,28 @@ pub fn format_layer_visibility_success(id: u32, visible: bool) -> String {
 /// Format a success message for setting layer opacity
 pub fn format_layer_opacity_success(id: u32, opacity: f32) -> String {
     format_success(&format!("Layer {} opacity set to {:.2}", id, opacity))
+}
+
+/// Format a success message for setting layer source rectangle
+pub fn format_layer_source_rect_success(
+    id: u32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> String {
+    format_success(&format!(
+        "Layer {} source rectangle set to position ({}, {}) and size {}x{}",
+        id, x, y, width, height
+    ))
+}
+
+/// Format a success message for setting layer destination rectangle
+pub fn format_layer_dest_rect_success(id: u32, x: i32, y: i32, width: i32, height: i32) -> String {
+    format_success(&format!(
+        "Layer {} destination rectangle set to position ({}, {}) and size {}x{}",
+        id, x, y, width, height
+    ))
 }
 
 /// Format a success message for commit operation
@@ -558,6 +598,18 @@ mod message_tests {
     }
 
     #[test]
+    fn test_format_surface_source_rect_success() {
+        assert_eq!(
+            format_surface_source_rect_success(1000, 0, 0, 1920, 1080),
+            "✓ Surface 1000 source rectangle set to position (0, 0) and size 1920x1080"
+        );
+        assert_eq!(
+            format_surface_source_rect_success(1001, 100, 200, 800, 600),
+            "✓ Surface 1001 source rectangle set to position (100, 200) and size 800x600"
+        );
+    }
+
+    #[test]
     fn test_format_surface_dest_rect_success() {
         assert_eq!(
             format_surface_dest_rect_success(1000, 100, 200, 1920, 1080),
@@ -566,18 +618,6 @@ mod message_tests {
         assert_eq!(
             format_surface_dest_rect_success(1001, -50, -100, 800, 600),
             "✓ Surface 1001 destination rectangle set to position (-50, -100) and size 800x600"
-        );
-    }
-
-    #[test]
-    fn test_format_surface_orientation_success() {
-        assert_eq!(
-            format_surface_orientation_success(1000, "Normal"),
-            "✓ Surface 1000 orientation set to Normal"
-        );
-        assert_eq!(
-            format_surface_orientation_success(1001, "Rotate90"),
-            "✓ Surface 1001 orientation set to Rotate90"
         );
     }
 
@@ -626,6 +666,30 @@ mod message_tests {
         assert_eq!(
             format_layer_opacity_success(2001, 0.75),
             "✓ Layer 2001 opacity set to 0.75"
+        );
+    }
+
+    #[test]
+    fn test_format_layer_source_rect_success() {
+        assert_eq!(
+            format_layer_source_rect_success(2000, 0, 0, 1920, 1080),
+            "✓ Layer 2000 source rectangle set to position (0, 0) and size 1920x1080"
+        );
+        assert_eq!(
+            format_layer_source_rect_success(2001, 100, 200, 800, 600),
+            "✓ Layer 2001 source rectangle set to position (100, 200) and size 800x600"
+        );
+    }
+
+    #[test]
+    fn test_format_layer_dest_rect_success() {
+        assert_eq!(
+            format_layer_dest_rect_success(2000, 100, 200, 1920, 1080),
+            "✓ Layer 2000 destination rectangle set to position (100, 200) and size 1920x1080"
+        );
+        assert_eq!(
+            format_layer_dest_rect_success(2001, -50, -100, 800, 600),
+            "✓ Layer 2001 destination rectangle set to position (-50, -100) and size 800x600"
         );
     }
 

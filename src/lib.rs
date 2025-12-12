@@ -73,7 +73,8 @@ use std::sync::{Arc, Mutex};
 use libc::{c_char, c_int, c_void};
 
 use crate::controller::notifications::NotificationType;
-use controller::{EventContext, EventListeners, IviLayoutApi, StateManager};
+use crate::ffi::bindings::ivi_layout_api::IviLayoutApi;
+use controller::{EventContext, EventListeners, StateManager};
 use rpc::{NotificationBridge, RpcHandler};
 use transport::{unix_socket::UnixSocketConfig, UnixSocketTransport};
 
@@ -152,6 +153,14 @@ pub extern "C" fn wet_module_init(
     argc: c_int,
     argv: *const *const c_char,
 ) -> c_int {
+    // Initialize logging
+    JloggerBuilder::new()
+        .log_console(true)
+        .log_file(Some(("/tmp/weston-ivi-controller.log", false)))
+        .log_time(LogTimeFormat::TimeStamp)
+        .max_level(LevelFilter::DEBUG)
+        .build();
+
     // Catch panics to prevent unwinding across FFI boundary
     let result = panic::catch_unwind(|| unsafe {
         plugin_init_impl(compositor as *mut ffi::weston_compositor, argc, argv)
@@ -224,13 +233,6 @@ unsafe fn plugin_init_impl(
     argc: c_int,
     argv: *const *const c_char,
 ) -> Result<(PluginState, *mut ffi::weston_compositor), String> {
-    JloggerBuilder::new()
-        .log_console(true)
-        .log_file(Some(("/tmp/weston-ivi-controller.log", false)))
-        .log_time(LogTimeFormat::TimeStamp)
-        .max_level(LevelFilter::DEBUG)
-        .build();
-
     jinfo!("Weston IVI Controller plugin initializing...");
 
     // Parse command-line arguments
@@ -240,22 +242,15 @@ unsafe fn plugin_init_impl(
     jinfo!("Using socket path: {:?}", socket_path);
 
     // Retrieve the IVI layout API from Weston compositor
-    let ivi_api_ptr = get_ivi_layout_api(compositor);
-
-    if ivi_api_ptr.is_null() {
-        jerror!("Failed to retrieve IVI layout API from compositor");
-        return Err("Failed to retrieve IVI layout API from compositor".to_string());
-    }
-
-    let ivi_api = IviLayoutApi::from_raw(ivi_api_ptr)
-        .ok_or_else(|| "Failed to create IVI layout API wrapper".to_string())?;
-
-    let ivi_api = Arc::new(ivi_api);
+    let ivi_api = Arc::new(
+        get_ivi_layout_api(compositor)
+            .ok_or_else(|| "Failed to retrieve IVI layout API".to_string())?,
+    );
 
     jinfo!("IVI layout API retrieved successfully");
 
     // Create state manager
-    let mut state_manager = StateManager::new(Arc::clone(&ivi_api));
+    let mut state_manager = StateManager::new(ivi_api.clone());
 
     // Synchronize initial state with IVI
     state_manager.sync_with_ivi();
@@ -318,8 +313,8 @@ unsafe fn plugin_init_impl(
     // Register per-layer property listeners for existing layers
     unsafe {
         let existing_layer_ids: Vec<u32> = {
-            let layers = ivi_api.get_layers();
-            layers.iter().map(|l| l.get_id()).collect()
+            let layers = ivi_api.get_layers()?;
+            layers.iter().map(|l| l.id()).collect()
         };
         for id in existing_layer_ids {
             let _ = event_context.register_layer_property_listener_by_id(id);
@@ -430,25 +425,8 @@ unsafe fn parse_socket_path(argc: c_int, argv: *const *const c_char) -> Option<P
 ///
 /// # Returns
 /// Pointer to the IVI layout interface, or null if not available
-unsafe fn get_ivi_layout_api(
-    compositor: *mut ffi::weston_compositor,
-) -> *const ffi::bindings::ivi_layout_interface {
-    if compositor.is_null() {
-        jerror!("Compositor pointer is null");
-        return std::ptr::null();
-    }
-
-    jinfo!("Retrieving IVI layout API from Weston compositor");
-
-    let api_ptr = ffi::bindings::ivi_layout_get_api(compositor);
-
-    if api_ptr.is_null() {
-        jerror!("Failed to retrieve IVI layout API - ensure IVI shell is loaded");
-        return std::ptr::null();
-    }
-
-    jinfo!("Successfully retrieved IVI layout API");
-    api_ptr
+fn get_ivi_layout_api(compositor: *mut ffi::weston_compositor) -> Option<IviLayoutApi> {
+    IviLayoutApi::new(compositor)
 }
 
 /// Plugin cleanup function - NO-OP in standard Weston pattern

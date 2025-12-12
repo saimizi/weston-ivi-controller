@@ -4,11 +4,19 @@
 //! Weston IVI controller via UNIX domain sockets and handles JSON-RPC communication.
 
 use crate::error::{IviError, Result};
+use crate::ffi::*;
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
+use serde_json::json;
 use serde_json::Value;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 use weston_ivi_controller::rpc::framing::{write_frame, FrameReadResult, FrameReader};
+
+pub enum IviRequestResult {
+    /// Result of creating a layer, returns the new layer ID
+    CreateLayer(LayerId),
+    GetLayer(IviLayer),
+}
 
 /// Default socket path for the IVI controller
 pub const DEFAULT_SOCKET_PATH: &str = "/tmp/weston-ivi-controller.sock";
@@ -144,13 +152,12 @@ impl IviClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn list_surfaces(&mut self) -> Result<Vec<crate::types::Surface>> {
-        use serde_json::json;
-
+    pub fn list_surfaces(&mut self) -> Result<Vec<IviSurface>> {
         let result = self.send_request("list_surfaces", json!({}))?;
+        eprintln!("list_surfaces result: {}", result);
 
         // Extract the "surfaces" array from the result object
-        let surfaces: Vec<crate::types::Surface> = serde_json::from_value(
+        let surfaces: Vec<IviSurface> = serde_json::from_value(
             result
                 .get("surfaces")
                 .ok_or_else(|| {
@@ -194,26 +201,28 @@ impl IviClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn get_surface(&mut self, id: u32) -> Result<crate::types::Surface> {
+    pub fn get_surface(&mut self, id: u32) -> Result<IviSurface> {
         use serde_json::json;
 
         let result = self.send_request("get_surface", json!({ "id": id }))?;
 
         // Parse the result as a surface
-        let surface: crate::types::Surface = serde_json::from_value(result).map_err(|e| {
+        let surface: IviSurface = serde_json::from_value(result).map_err(|e| {
             IviError::DeserializationError(format!("Failed to parse surface: {}", e))
         })?;
 
         Ok(surface)
     }
 
-    /// Sets the position of a surface.
+    /// Sets the source rectangle of a surface (which part of the application buffer to display).
     ///
     /// # Arguments
     ///
     /// * `id` - The surface ID to modify
-    /// * `x` - The x-coordinate of the surface position
-    /// * `y` - The y-coordinate of the surface position
+    /// * `x` - The X coordinate in the source buffer
+    /// * `y` - The Y coordinate in the source buffer
+    /// * `width` - The width of the source rectangle in pixels
+    /// * `height` - The height of the source rectangle in pixels
     ///
     /// # Errors
     ///
@@ -228,48 +237,67 @@ impl IviClient {
     ///
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_surface_position(1000, 100, 200)?;
+    /// client.set_surface_source_rectangle(1000, 0, 0, 1920, 1080)?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn set_surface_position(&mut self, id: u32, x: i32, y: i32) -> Result<()> {
-        use serde_json::json;
-
-        self.send_request("set_surface_position", json!({ "id": id, "x": x, "y": y }))?;
-        Ok(())
-    }
-
-    /// Sets the size of a surface.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - The surface ID to modify
-    /// * `width` - The width of the surface in pixels
-    /// * `height` - The height of the surface in pixels
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The surface ID does not exist
-    /// - Communication with the controller fails
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use ivi_client::IviClient;
-    ///
-    /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_surface_size(1000, 1920, 1080)?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn set_surface_size(&mut self, id: u32, width: u32, height: u32) -> Result<()> {
+    pub fn set_surface_source_rectangle(
+        &mut self,
+        id: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<()> {
         use serde_json::json;
 
         self.send_request(
-            "set_surface_size",
-            json!({ "id": id, "width": width, "height": height }),
+            "set_surface_source_rectangle",
+            json!({ "id": id, "x": x, "y": y, "width": width, "height": height }),
+        )?;
+        Ok(())
+    }
+
+    /// Sets the destination rectangle of a surface (where and at what size to display on screen).
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The surface ID to modify
+    /// * `x` - The X coordinate on screen
+    /// * `y` - The Y coordinate on screen
+    /// * `width` - The width on screen in pixels
+    /// * `height` - The height on screen in pixels
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The surface ID does not exist
+    /// - Communication with the controller fails
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use ivi_client::IviClient;
+    ///
+    /// # fn main() -> ivi_client::Result<()> {
+    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// client.set_surface_destination_rectangle(1000, 100, 200, 1280, 720)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn set_surface_destination_rectangle(
+        &mut self,
+        id: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<()> {
+        use serde_json::json;
+
+        self.send_request(
+            "set_surface_destination_rectangle",
+            json!({ "id": id, "x": x, "y": y, "width": width, "height": height }),
         )?;
         Ok(())
     }
@@ -339,44 +367,6 @@ impl IviClient {
         self.send_request(
             "set_surface_opacity",
             json!({ "id": id, "opacity": opacity }),
-        )?;
-        Ok(())
-    }
-
-    /// Sets the orientation of a surface.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - The surface ID to modify
-    /// * `orientation` - The orientation to apply (Normal, Rotate90, Rotate180, or Rotate270)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The surface ID does not exist
-    /// - Communication with the controller fails
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use ivi_client::{IviClient, Orientation};
-    ///
-    /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_surface_orientation(1000, Orientation::Rotate90)?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn set_surface_orientation(
-        &mut self,
-        id: u32,
-        orientation: crate::types::Orientation,
-    ) -> Result<()> {
-        use serde_json::json;
-
-        self.send_request(
-            "set_surface_orientation",
-            json!({ "id": id, "orientation": orientation }),
         )?;
         Ok(())
     }
@@ -472,13 +462,13 @@ impl IviClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn list_layers(&mut self) -> Result<Vec<crate::types::Layer>> {
+    pub fn list_layers(&mut self) -> Result<Vec<IviLayer>> {
         use serde_json::json;
 
         let result = self.send_request("list_layers", json!({}))?;
 
         // Extract the "layers" array from the result object
-        let layers: Vec<crate::types::Layer> = serde_json::from_value(
+        let layers: Vec<IviLayer> = serde_json::from_value(
             result
                 .get("layers")
                 .ok_or_else(|| {
@@ -520,16 +510,155 @@ impl IviClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn get_layer(&mut self, id: u32) -> Result<crate::types::Layer> {
-        use serde_json::json;
-
+    pub fn get_layer(&mut self, id: u32) -> Result<IviLayer> {
         let result = self.send_request("get_layer", json!({ "id": id }))?;
 
         // Parse the result as a layer
-        let layer: crate::types::Layer = serde_json::from_value(result)
+        let layer: IviLayer = serde_json::from_value(result)
             .map_err(|e| IviError::DeserializationError(format!("Failed to parse layer: {}", e)))?;
 
         Ok(layer)
+    }
+
+    /// Creates a new layer in the IVI compositor.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The desired layer ID
+    /// * `width` - The width of the layer in pixels
+    /// * `height` - The height of the layer in pixels
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The layer ID already exists
+    /// - Communication with the controller fails
+    /// - Invalid parameter
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use ivi_client::IviClient;
+    /// # fn main() -> ivi_client::Result<()> {
+    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// client.create_layer(2000, 1920, 1080)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn create_layer(
+        &mut self,
+        id: u32,
+        width: i32,
+        height: i32,
+        auto_commit: bool,
+    ) -> Result<IviRequestResult> {
+        let result = self.send_request(
+            "create_layer",
+            json!({ "id": id, "width": width, "height": height , "auto_commit": auto_commit }),
+        )?;
+
+        let id = result
+            .get("id")
+            .ok_or_else(|| {
+                IviError::DeserializationError("Missing 'id' field in response".to_string())
+            })
+            .and_then(|value| {
+                value.as_u64().map(|v| v as u32).ok_or_else(|| {
+                    IviError::DeserializationError(
+                        "Invalid 'id' field type in response".to_string(),
+                    )
+                })
+            })?;
+
+        Ok(IviRequestResult::CreateLayer(id))
+    }
+
+    /// Sets the source rectangle of a layer.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The layer ID to modify
+    /// * `x` - The X coordinate in the source
+    /// * `y` - The Y coordinate in the source
+    /// * `width` - The width of the source rectangle in pixels
+    /// * `height` - The height of the source rectangle in pixels
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The layer ID does not exist
+    /// - Communication with the controller fails
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use ivi_client::IviClient;
+    ///
+    /// # fn main() -> ivi_client::Result<()> {
+    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// client.set_layer_source_rectangle(2000, 0, 0, 1920, 1080)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn set_layer_source_rectangle(
+        &mut self,
+        id: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<()> {
+        use serde_json::json;
+
+        self.send_request(
+            "set_layer_source_rectangle",
+            json!({ "id": id, "x": x, "y": y, "width": width, "height": height }),
+        )?;
+        Ok(())
+    }
+
+    /// Sets the destination rectangle of a layer.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The layer ID to modify
+    /// * `x` - The X coordinate on screen
+    /// * `y` - The Y coordinate on screen
+    /// * `width` - The width on screen in pixels
+    /// * `height` - The height on screen in pixels
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The layer ID does not exist
+    /// - Communication with the controller fails
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use ivi_client::IviClient;
+    ///
+    /// # fn main() -> ivi_client::Result<()> {
+    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// client.set_layer_destination_rectangle(2000, 0, 0, 1920, 1080)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn set_layer_destination_rectangle(
+        &mut self,
+        id: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<()> {
+        use serde_json::json;
+
+        self.send_request(
+            "set_layer_destination_rectangle",
+            json!({ "id": id, "x": x, "y": y, "width": width, "height": height }),
+        )?;
+        Ok(())
     }
 
     /// Sets the visibility of a layer.
@@ -623,8 +752,7 @@ impl IviClient {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
     ///
     /// // Make multiple changes
-    /// client.set_surface_position(1000, 100, 200)?;
-    /// client.set_surface_size(1000, 1920, 1080)?;
+    /// client.set_surface_destination_rectangle(1000, 100, 200, 1920, 1080)?;
     /// client.set_surface_visibility(1000, true)?;
     ///
     /// // Commit all changes atomically

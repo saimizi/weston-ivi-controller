@@ -1,6 +1,5 @@
 // RPC protocol definitions
 
-use crate::controller::state::Orientation;
 use serde::{Deserialize, Serialize};
 
 /// Event types for client subscriptions
@@ -9,7 +8,8 @@ pub enum EventType {
     // Surface events
     SurfaceCreated,
     SurfaceDestroyed,
-    GeometryChanged,
+    SourceGeometryChanged,
+    DestinationGeometryChanged,
     VisibilityChanged,
     OpacityChanged,
     OrientationChanged,
@@ -189,26 +189,81 @@ impl RpcError {
 pub enum RpcMethod {
     // Surface methods
     ListSurfaces,
-    GetSurface { id: u32 },
-    SetPosition { id: u32, x: i32, y: i32 },
-    SetSize { id: u32, width: i32, height: i32 },
-    SetVisibility { id: u32, visible: bool },
-    SetOpacity { id: u32, opacity: f32 },
-    SetOrientation { id: u32, orientation: Orientation },
-    SetZOrder { id: u32, z_order: i32 },
-    SetFocus { id: u32 },
+    GetSurface {
+        id: u32,
+    },
+    SetSurfaceSourceRectangle {
+        id: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    },
+    SetSurfaceDestinationRectangle {
+        id: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    },
+    SetSurfaceVisibility {
+        id: u32,
+        visible: bool,
+    },
+    SetSurfaceOpacity {
+        id: u32,
+        opacity: f32,
+    },
+    SetSurfaceZOrder {
+        id: u32,
+        z_order: i32,
+    },
+    SetSurfaceFocus {
+        id: u32,
+    },
     Commit,
 
     // Subscription methods
-    Subscribe { event_types: Vec<EventType> },
-    Unsubscribe { event_types: Vec<EventType> },
+    Subscribe {
+        event_types: Vec<EventType>,
+    },
+    Unsubscribe {
+        event_types: Vec<EventType>,
+    },
     ListSubscriptions,
 
     // Layer methods
     ListLayers,
-    GetLayer { id: u32 },
-    SetLayerVisibility { id: u32, visible: bool },
-    SetLayerOpacity { id: u32, opacity: f32 },
+    GetLayer {
+        id: u32,
+    },
+    CreateLayer {
+        id: u32,
+        width: i32,
+        height: i32,
+    },
+    SetLayerSourceRectangle {
+        id: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    },
+    SetLayerDestinationRectangle {
+        id: u32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    },
+    SetLayerVisibility {
+        id: u32,
+        visible: bool,
+    },
+    SetLayerOpacity {
+        id: u32,
+        opacity: f32,
+    },
 }
 
 impl RpcMethod {
@@ -224,54 +279,42 @@ impl RpcMethod {
                     .and_then(|v| v.as_u64())
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
-                    })?;
-                Ok(RpcMethod::GetSurface { id: id as u32 })
+                    })? as u32;
+                Ok(RpcMethod::GetSurface { id })
             }
 
-            "set_position" => {
+            "set_surface_source_rectangle" => {
                 let id = request
                     .params
                     .get("id")
                     .and_then(|v| v.as_u64())
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
-                    })?;
+                    })? as u32;
+
                 let x = request
                     .params
                     .get("x")
                     .and_then(|v| v.as_i64())
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'x' parameter".to_string())
-                    })?;
+                    })? as i32;
+
                 let y = request
                     .params
                     .get("y")
                     .and_then(|v| v.as_i64())
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'y' parameter".to_string())
-                    })?;
-                Ok(RpcMethod::SetPosition {
-                    id: id as u32,
-                    x: x as i32,
-                    y: y as i32,
-                })
-            }
+                    })? as i32;
 
-            "set_size" => {
-                let id = request
-                    .params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or_else(|| {
-                        RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
-                    })?;
                 let width = request
                     .params
                     .get("width")
                     .and_then(|v| v.as_i64())
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'width' parameter".to_string())
-                    })?;
+                    })? as i32;
                 let height = request
                     .params
                     .get("height")
@@ -280,22 +323,72 @@ impl RpcMethod {
                         RpcError::invalid_params(
                             "Missing or invalid 'height' parameter".to_string(),
                         )
-                    })?;
-                Ok(RpcMethod::SetSize {
-                    id: id as u32,
-                    width: width as i32,
-                    height: height as i32,
+                    })? as i32;
+
+                Ok(RpcMethod::SetSurfaceSourceRectangle {
+                    id,
+                    x,
+                    y,
+                    width,
+                    height,
                 })
             }
 
-            "set_visibility" => {
+            "set_surface_destination_rectangle" => {
                 let id = request
                     .params
                     .get("id")
                     .and_then(|v| v.as_u64())
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
-                    })?;
+                    })? as u32;
+                let x = request
+                    .params
+                    .get("x")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'x' parameter".to_string())
+                    })? as i32;
+                let y = request
+                    .params
+                    .get("y")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'y' parameter".to_string())
+                    })? as i32;
+                let width = request
+                    .params
+                    .get("width")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'width' parameter".to_string())
+                    })? as i32;
+                let height = request
+                    .params
+                    .get("height")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'height' parameter".to_string(),
+                        )
+                    })? as i32;
+                Ok(RpcMethod::SetSurfaceDestinationRectangle {
+                    id,
+                    x,
+                    y,
+                    width,
+                    height,
+                })
+            }
+
+            "set_surface_visibility" => {
+                let id = request
+                    .params
+                    .get("id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
+                    })? as u32;
                 let visible = request
                     .params
                     .get("visible")
@@ -305,20 +398,17 @@ impl RpcMethod {
                             "Missing or invalid 'visible' parameter".to_string(),
                         )
                     })?;
-                Ok(RpcMethod::SetVisibility {
-                    id: id as u32,
-                    visible,
-                })
+                Ok(RpcMethod::SetSurfaceVisibility { id, visible })
             }
 
-            "set_opacity" => {
+            "set_surface_opacity" => {
                 let id = request
                     .params
                     .get("id")
                     .and_then(|v| v.as_u64())
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
-                    })?;
+                    })? as u32;
                 let opacity = request
                     .params
                     .get("opacity")
@@ -328,46 +418,20 @@ impl RpcMethod {
                             "Missing or invalid 'opacity' parameter".to_string(),
                         )
                     })?;
-                Ok(RpcMethod::SetOpacity {
-                    id: id as u32,
+                Ok(RpcMethod::SetSurfaceOpacity {
+                    id,
                     opacity: opacity as f32,
                 })
             }
 
-            "set_orientation" => {
+            "set_surface_z_order" => {
                 let id = request
                     .params
                     .get("id")
                     .and_then(|v| v.as_u64())
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
-                    })?;
-                let orientation: Orientation = serde_json::from_value(
-                    request
-                        .params
-                        .get("orientation")
-                        .ok_or_else(|| {
-                            RpcError::invalid_params("Missing 'orientation' parameter".to_string())
-                        })?
-                        .clone(),
-                )
-                .map_err(|_| {
-                    RpcError::invalid_params("Invalid 'orientation' parameter".to_string())
-                })?;
-                Ok(RpcMethod::SetOrientation {
-                    id: id as u32,
-                    orientation,
-                })
-            }
-
-            "set_z_order" => {
-                let id = request
-                    .params
-                    .get("id")
-                    .and_then(|v| v.as_u64())
-                    .ok_or_else(|| {
-                        RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
-                    })?;
+                    })? as u32;
                 let z_order = request
                     .params
                     .get("z_order")
@@ -376,14 +440,11 @@ impl RpcMethod {
                         RpcError::invalid_params(
                             "Missing or invalid 'z_order' parameter".to_string(),
                         )
-                    })?;
-                Ok(RpcMethod::SetZOrder {
-                    id: id as u32,
-                    z_order: z_order as i32,
-                })
+                    })? as i32;
+                Ok(RpcMethod::SetSurfaceZOrder { id, z_order })
             }
 
-            "set_focus" => {
+            "set_surface_focus" => {
                 let id = request
                     .params
                     .get("id")
@@ -391,7 +452,7 @@ impl RpcMethod {
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
                     })?;
-                Ok(RpcMethod::SetFocus { id: id as u32 })
+                Ok(RpcMethod::SetSurfaceFocus { id: id as u32 })
             }
 
             "commit" => Ok(RpcMethod::Commit),
@@ -434,6 +495,33 @@ impl RpcMethod {
             // Layer methods
             "list_layers" => Ok(RpcMethod::ListLayers),
 
+            "create_layer" => {
+                let id = request
+                    .params
+                    .get("id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
+                    })? as u32;
+                let width = request
+                    .params
+                    .get("width")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'width' parameter".to_string())
+                    })? as i32;
+                let height = request
+                    .params
+                    .get("height")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'height' parameter".to_string(),
+                        )
+                    })? as i32;
+                Ok(RpcMethod::CreateLayer { id, width, height })
+            }
+
             "get_layer" => {
                 let id = request
                     .params
@@ -441,8 +529,102 @@ impl RpcMethod {
                     .and_then(|v| v.as_u64())
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
-                    })?;
-                Ok(RpcMethod::GetLayer { id: id as u32 })
+                    })? as u32;
+                Ok(RpcMethod::GetLayer { id })
+            }
+
+            "set_layer_source_rectangle" => {
+                let id = request
+                    .params
+                    .get("id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
+                    })? as u32;
+                let x = request
+                    .params
+                    .get("x")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'x' parameter".to_string())
+                    })? as i32;
+                let y = request
+                    .params
+                    .get("y")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'y' parameter".to_string())
+                    })? as i32;
+                let width = request
+                    .params
+                    .get("width")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'width' parameter".to_string())
+                    })? as i32;
+                let height = request
+                    .params
+                    .get("height")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'height' parameter".to_string(),
+                        )
+                    })? as i32;
+                Ok(RpcMethod::SetLayerSourceRectangle {
+                    id,
+                    x,
+                    y,
+                    width,
+                    height,
+                })
+            }
+
+            "set_layer_destination_rectangle" => {
+                let id = request
+                    .params
+                    .get("id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
+                    })? as u32;
+                let x = request
+                    .params
+                    .get("x")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'x' parameter".to_string())
+                    })? as i32;
+                let y = request
+                    .params
+                    .get("y")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'y' parameter".to_string())
+                    })? as i32;
+                let width = request
+                    .params
+                    .get("width")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'width' parameter".to_string())
+                    })? as i32;
+                let height = request
+                    .params
+                    .get("height")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'height' parameter".to_string(),
+                        )
+                    })? as i32;
+                Ok(RpcMethod::SetLayerDestinationRectangle {
+                    id,
+                    x,
+                    y,
+                    width,
+                    height,
+                })
             }
 
             "set_layer_visibility" => {
@@ -475,7 +657,7 @@ impl RpcMethod {
                     .and_then(|v| v.as_u64())
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
-                    })?;
+                    })? as u32;
                 let opacity = request
                     .params
                     .get("opacity")
@@ -484,11 +666,8 @@ impl RpcMethod {
                         RpcError::invalid_params(
                             "Missing or invalid 'opacity' parameter".to_string(),
                         )
-                    })?;
-                Ok(RpcMethod::SetLayerOpacity {
-                    id: id as u32,
-                    opacity: opacity as f32,
-                })
+                    })? as f32;
+                Ok(RpcMethod::SetLayerOpacity { id, opacity })
             }
 
             _ => Err(RpcError::method_not_found(request.method.clone())),
