@@ -59,7 +59,7 @@ fn create_symlink() {
     let target = env::var("TARGET").unwrap_or_else(|_| "".to_string());
 
     // Build the target directory path
-    let target_dir = if target.is_empty() {
+    let target_dir = if target.is_empty() || target == env::var("HOST").unwrap() {
         // Native build: target/<profile>
         PathBuf::from("target").join(&profile)
     } else {
