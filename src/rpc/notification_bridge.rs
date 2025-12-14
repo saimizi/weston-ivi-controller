@@ -268,7 +268,7 @@ mod tests {
         let params = rpc_notification.params.as_object().unwrap();
         assert_eq!(
             params.get("event_type").unwrap().as_str().unwrap(),
-            "GeometryChanged"
+            "SourceGeometryChanged"
         );
         assert_eq!(params.get("surface_id").unwrap().as_u64().unwrap(), 1000);
     }

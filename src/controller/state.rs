@@ -649,7 +649,8 @@ mod tests {
         assert!(got.contains(&NotificationType::VisibilityChanged));
         assert!(got.contains(&NotificationType::OpacityChanged));
         assert!(got.contains(&NotificationType::OrientationChanged));
-        assert_eq!(got.len(), 4);
+        // Note: GeometryChanged is emitted twice (once for src_rect, once for dest_rect)
+        assert_eq!(got.len(), 5);
     }
 
     #[test]

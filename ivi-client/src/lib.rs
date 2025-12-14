@@ -27,11 +27,9 @@
 //!     // List all surfaces
 //!     let surfaces = client.list_surfaces()?;
 //!     for surface in &surfaces {
-//!         println!("Surface {}: {}x{} at {}",
+//!         println!("Surface {}: {}",
 //!             surface.id,
-//!             surface.dest_size.width,
-//!             surface.dest_size.height,
-//!             surface.dest_position
+//!             surface.dest_rect
 //!         );
 //!     }
 //!     

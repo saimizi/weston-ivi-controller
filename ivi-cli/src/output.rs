@@ -315,7 +315,7 @@ mod properties_tests {
         assert!(output.contains("DestRect: 1920x1080@(100, 200)"));
         assert!(output.contains("Visibility: true"));
         assert!(output.contains("Opacity: 1.00"));
-        assert!(output.contains("Orientation: Normal"));
+        assert!(output.contains("Orientation: 0 degrees"));
         assert!(output.contains("Z-Order: 0"));
     }
 
@@ -352,7 +352,7 @@ mod properties_tests {
         assert!(output.contains("DestRect: 1280x720@(-50, -100)"));
         assert!(output.contains("Visibility: false"));
         assert!(output.contains("Opacity: 0.50"));
-        assert!(output.contains("Orientation: Rotate90"));
+        assert!(output.contains("Orientation: 90 degrees"));
         assert!(output.contains("Z-Order: -1"));
     }
 
