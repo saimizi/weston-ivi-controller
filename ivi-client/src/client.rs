@@ -541,7 +541,7 @@ impl IviClient {
     /// use ivi_client::IviClient;
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.create_layer(2000, 1920, 1080)?;
+    /// client.create_layer(2000, 1920, 1080, true)?;
     /// # Ok(())
     /// # }
     /// ```

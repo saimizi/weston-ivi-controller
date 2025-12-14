@@ -113,7 +113,8 @@ enum LayerCommands {
         /// Layer ID
         id: u32,
     },
-    CreateLayer {
+    /// Create a new layer with specified dimensions
+    Create {
         /// Layer ID
         id: u32,
         /// Width in pixels
@@ -408,7 +409,7 @@ fn main() {
         Commands::Layer { command } => match command {
             LayerCommands::List => handle_layer_list(&cli.socket),
             LayerCommands::GetProperties { id } => handle_layer_get_properties(&cli.socket, id),
-            LayerCommands::CreateLayer { id, width, height } => {
+            LayerCommands::Create { id, width, height } => {
                 handle_layer_create_layer(&cli.socket, id, width, height)
             }
             LayerCommands::SetSourceRect {

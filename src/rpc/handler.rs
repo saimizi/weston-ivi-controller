@@ -215,7 +215,7 @@ impl RpcHandler {
             // Layer methods
             RpcMethod::ListLayers => self.handle_list_layers(),
             RpcMethod::CreateLayer { id, width, height } => {
-                self.handle_create_layer(id, width, height)
+                self.handle_create_layer(id, width, height, auto_commit)
             }
             RpcMethod::GetLayer { id } => self.handle_get_layer(id),
             RpcMethod::SetLayerSourceRectangle {
@@ -679,6 +679,7 @@ impl RpcHandler {
         id: u32,
         width: i32,
         height: i32,
+        auto_commit: bool,
     ) -> Result<serde_json::Value, RpcError> {
         jdebug!("Creating new layer with size {}x{}", width, height);
 
@@ -697,8 +698,14 @@ impl RpcHandler {
 
         jinfo!("Created new layer with ID {}", layer.id());
 
+        // Commit changes only if auto_commit is true
+        if auto_commit {
+            self.commit_layer_changes(id)?;
+        }
+
         Ok(json!({
             "id": layer.id(),
+            "committed": auto_commit,
         }))
     }
 
