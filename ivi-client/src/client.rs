@@ -727,6 +727,162 @@ impl IviClient {
         Ok(())
     }
 
+    /// Lists all available screens (outputs) in the IVI compositor.
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of `IviScreen` structures containing information about each screen.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if communication with the controller fails.
+    pub fn list_screens(&mut self) -> Result<Vec<IviScreen>> {
+        use serde_json::json;
+
+        let response = self.send_request("list_screens", json!({}))?;
+        let screens: Vec<IviScreen> = serde_json::from_value(response["screens"].clone())
+            .map_err(|e| IviError::DeserializationError(e.to_string()))?;
+        Ok(screens)
+    }
+
+    /// Gets information about a specific screen by name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The screen name (e.g., "HDMI-A-1")
+    ///
+    /// # Returns
+    ///
+    /// Returns an `IviScreen` structure with screen information.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the screen is not found or communication fails.
+    pub fn get_screen(&mut self, name: &str) -> Result<IviScreen> {
+        use serde_json::json;
+
+        let response = self.send_request("get_screen", json!({ "name": name }))?;
+        let screen: IviScreen = serde_json::from_value(response)
+            .map_err(|e| IviError::DeserializationError(e.to_string()))?;
+        Ok(screen)
+    }
+
+    /// Gets the list of layer IDs assigned to a screen.
+    ///
+    /// # Arguments
+    ///
+    /// * `screen_name` - The screen name
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of layer IDs in render order (first = topmost).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the screen is not found or communication fails.
+    pub fn get_screen_layers(&mut self, screen_name: &str) -> Result<Vec<u32>> {
+        use serde_json::json;
+
+        let response =
+            self.send_request("get_screen_layers", json!({ "screen_name": screen_name }))?;
+        let layer_ids: Vec<u32> = serde_json::from_value(response["layer_ids"].clone())
+            .map_err(|e| IviError::DeserializationError(e.to_string()))?;
+        Ok(layer_ids)
+    }
+
+    /// Gets the list of screen names that a layer is assigned to.
+    ///
+    /// # Arguments
+    ///
+    /// * `layer_id` - The layer ID
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of screen names.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the layer is not found or communication fails.
+    pub fn get_layer_screens(&mut self, layer_id: u32) -> Result<Vec<String>> {
+        use serde_json::json;
+
+        let response = self.send_request("get_layer_screens", json!({ "layer_id": layer_id }))?;
+        let screen_names: Vec<String> = serde_json::from_value(response["screen_names"].clone())
+            .map_err(|e| IviError::DeserializationError(e.to_string()))?;
+        Ok(screen_names)
+    }
+
+    /// Adds layers to a screen, setting the render order.
+    ///
+    /// This replaces all existing layers on the screen with the specified layers.
+    /// The order in the array determines the z-order (first element = topmost layer).
+    ///
+    /// # Arguments
+    ///
+    /// * `screen_name` - The screen name
+    /// * `layer_ids` - Vector of layer IDs in desired render order
+    /// * `auto_commit` - If true, automatically commits the changes
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the screen or any layer is not found, or communication fails.
+    pub fn add_layers_to_screen(
+        &mut self,
+        screen_name: &str,
+        layer_ids: &[u32],
+        auto_commit: bool,
+    ) -> Result<()> {
+        use serde_json::json;
+
+        self.send_request(
+            "add_layers_to_screen",
+            json!({
+                "screen_name": screen_name,
+                "layer_ids": layer_ids,
+                "auto_commit": auto_commit
+            }),
+        )?;
+        Ok(())
+    }
+
+    /// Removes a layer from a screen.
+    ///
+    /// # Arguments
+    ///
+    /// * `screen_name` - The screen name
+    /// * `layer_id` - The layer ID to remove
+    /// * `auto_commit` - If true, automatically commits the changes
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the screen or layer is not found, or communication fails.
+    pub fn remove_layer_from_screen(
+        &mut self,
+        screen_name: &str,
+        layer_id: u32,
+        auto_commit: bool,
+    ) -> Result<()> {
+        use serde_json::json;
+
+        self.send_request(
+            "remove_layer_from_screen",
+            json!({
+                "screen_name": screen_name,
+                "layer_id": layer_id,
+                "auto_commit": auto_commit
+            }),
+        )?;
+        Ok(())
+    }
+
     /// Commits all pending changes to the IVI compositor atomically.
     ///
     /// This method applies all pending surface and layer modifications in a single

@@ -6,6 +6,7 @@ use crate::controller::state::{StateManager, SurfaceState};
 use crate::controller::subscriptions::SubscriptionManager;
 use crate::controller::validation;
 use crate::ffi::bindings::ivi_surface::IviSurface;
+use crate::ffi::bindings::weston_output_m::ScreenInfo;
 use crate::ffi::bindings::Rectangle;
 #[allow(unused)]
 use jlogger_tracing::{jdebug, jerror, jinfo, jtrace, jwarn, JloggerBuilder, LevelFilter};
@@ -238,6 +239,23 @@ impl RpcHandler {
             RpcMethod::SetLayerOpacity { id, opacity } => {
                 self.handle_set_layer_opacity(id, opacity, auto_commit)
             }
+            // Screen operations
+            RpcMethod::ListScreens => self.handle_list_screens(),
+            RpcMethod::GetScreen { name } => self.handle_get_screen(name),
+            RpcMethod::GetScreenLayers { screen_name } => {
+                self.handle_get_screen_layers(screen_name)
+            }
+            RpcMethod::GetLayerScreens { layer_id } => self.handle_get_layer_screens(layer_id),
+            RpcMethod::AddLayersToScreen {
+                screen_name,
+                layer_ids,
+                auto_commit,
+            } => self.handle_add_layers_to_screen(screen_name, layer_ids, auto_commit),
+            RpcMethod::RemoveLayerFromScreen {
+                screen_name,
+                layer_id,
+                auto_commit,
+            } => self.handle_remove_layer_from_screen(screen_name, layer_id, auto_commit),
         };
 
         // Generate response
@@ -925,6 +943,205 @@ fn surface_state_to_json(surface: &SurfaceState) -> serde_json::Value {
         "orientation": surface.orientation,
         "z_order": surface.z_order,
     })
+}
+
+impl RpcHandler {
+    /// List all screens
+    fn handle_list_screens(&self) -> Result<serde_json::Value, RpcError> {
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+        drop(state_manager);
+
+        let screens = ivi_api.get_screens();
+        let screen_infos: Vec<serde_json::Value> = screens
+            .iter()
+            .filter_map(|output| {
+                let info = ScreenInfo::from(output.clone());
+                Some(json!({
+                    "name": info.name,
+                    "width": info.width,
+                    "height": info.height,
+                    "x": info.coord_global.x,
+                    "y": info.coord_global.y,
+                    "transform": info.transform.to_string(),
+                    "enabled": info.enabled,
+                    "scale": info.scale,
+                }))
+            })
+            .collect();
+
+        Ok(json!({ "screens": screen_infos }))
+    }
+
+    /// Get a specific screen by name
+    fn handle_get_screen(&self, name: String) -> Result<serde_json::Value, RpcError> {
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+        drop(state_manager);
+
+        let screens = ivi_api.get_screens();
+        let screen = screens
+            .iter()
+            .find(|output| output.name() == Some(name.clone()))
+            .ok_or_else(|| RpcError::internal_error(format!("Screen '{}' not found", name)))?;
+
+        let screen_info = ScreenInfo::from(screen.clone());
+
+        Ok(json!({
+            "name": screen_info.name,
+            "width": screen_info.width,
+            "height": screen_info.height,
+            "x": screen_info.coord_global.x,
+            "y": screen_info.coord_global.y,
+            "transform": screen_info.transform.to_string(),
+            "enabled": screen_info.enabled,
+            "scale": screen_info.scale,
+        }))
+    }
+
+    /// Get layers assigned to a screen
+    fn handle_get_screen_layers(&self, screen_name: String) -> Result<serde_json::Value, RpcError> {
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+        drop(state_manager);
+
+        let screens = ivi_api.get_screens();
+        let screen = screens
+            .iter()
+            .find(|output| output.name() == Some(screen_name.clone()))
+            .ok_or_else(|| {
+                RpcError::internal_error(format!("Screen '{}' not found", screen_name))
+            })?;
+
+        let layers = ivi_api
+            .get_layers_on_screen((*screen).clone().into())
+            .map_err(|e| RpcError::internal_error(format!("Failed to get layers: {}", e)))?;
+
+        let layer_ids: Vec<u32> = layers.iter().map(|layer| layer.id()).collect();
+
+        Ok(json!({ "layer_ids": layer_ids }))
+    }
+
+    /// Get screens assigned to a layer
+    fn handle_get_layer_screens(&self, layer_id: u32) -> Result<serde_json::Value, RpcError> {
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+
+        // Get the layer
+        let layer = ivi_api
+            .get_layer_from_id(layer_id)
+            .ok_or_else(|| RpcError::layer_not_found(layer_id))?;
+
+        drop(state_manager);
+
+        let screens = ivi_api
+            .get_screens_under_layer(&layer)
+            .map_err(|e| RpcError::internal_error(format!("Failed to get screens: {}", e)))?;
+
+        let screen_names: Vec<String> = screens.iter().filter_map(|output| output.name()).collect();
+
+        Ok(json!({ "screen_names": screen_names }))
+    }
+
+    /// Add layers to a screen (sets render order, replaces existing)
+    fn handle_add_layers_to_screen(
+        &self,
+        screen_name: String,
+        layer_ids: Vec<u32>,
+        auto_commit: bool,
+    ) -> Result<serde_json::Value, RpcError> {
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+
+        // Find the screen
+        let screens = ivi_api.get_screens();
+        let screen = screens
+            .iter()
+            .find(|output| output.name() == Some(screen_name.clone()))
+            .ok_or_else(|| {
+                RpcError::internal_error(format!("Screen '{}' not found", screen_name))
+            })?;
+
+        // Verify all layers exist and build layer array
+        let layers: Vec<_> = layer_ids
+            .iter()
+            .filter_map(|&id| {
+                state_manager.get_layer(id)?;
+                ivi_api.get_layer_from_id(id)
+            })
+            .collect();
+
+        // Verify we got all layers
+        if layers.len() != layer_ids.len() {
+            return Err(RpcError::internal_error(
+                "Some layers not found".to_string(),
+            ));
+        }
+
+        drop(state_manager);
+
+        // Set render order - convert Vec<IviLayer> to &[&IviLayer]
+        let layer_refs: Vec<&_> = layers.iter().collect();
+        ivi_api
+            .screen_set_render_order((*screen).clone(), &layer_refs)
+            .map_err(|e| RpcError::internal_error(format!("Failed to set render order: {}", e)))?;
+
+        if auto_commit {
+            ivi_api
+                .commit_changes()
+                .map_err(|e| RpcError::internal_error(format!("Failed to commit: {}", e)))?;
+        }
+
+        Ok(json!({
+            "screen_name": screen_name,
+            "layer_ids": layer_ids,
+            "committed": auto_commit
+        }))
+    }
+
+    /// Remove a layer from a screen
+    fn handle_remove_layer_from_screen(
+        &self,
+        screen_name: String,
+        layer_id: u32,
+        auto_commit: bool,
+    ) -> Result<serde_json::Value, RpcError> {
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+
+        // Find the screen
+        let screens = ivi_api.get_screens();
+        let screen = screens
+            .iter()
+            .find(|output| output.name() == Some(screen_name.clone()))
+            .ok_or_else(|| {
+                RpcError::internal_error(format!("Screen '{}' not found", screen_name))
+            })?;
+
+        // Get the layer using get_layer_from_id
+        let layer = ivi_api
+            .get_layer_from_id(layer_id)
+            .ok_or_else(|| RpcError::layer_not_found(layer_id))?;
+
+        drop(state_manager);
+
+        // Remove layer from screen
+        ivi_api
+            .screen_remove_layer(screen.clone(), &layer)
+            .map_err(|e| RpcError::internal_error(format!("Failed to remove layer: {}", e)))?;
+
+        if auto_commit {
+            ivi_api
+                .commit_changes()
+                .map_err(|e| RpcError::internal_error(format!("Failed to commit: {}", e)))?;
+        }
+
+        Ok(json!({
+            "screen_name": screen_name,
+            "layer_id": layer_id,
+            "committed": auto_commit
+        }))
+    }
 }
 
 /// Message handler implementation that bridges transport and RPC handler

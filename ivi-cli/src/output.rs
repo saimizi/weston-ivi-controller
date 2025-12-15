@@ -543,6 +543,113 @@ pub fn format_layer_dest_rect_success(id: u32, x: i32, y: i32, width: i32, heigh
     ))
 }
 
+/// Format screen list output
+pub fn format_screen_list(screens: &[ivi_client::IviScreen]) -> String {
+    if screens.is_empty() {
+        return String::from("No screens found");
+    }
+
+    let mut output = format!("Found {} screen(s):\n", screens.len());
+    for screen in screens {
+        output.push_str(&format!(
+            "  {} - {}x{} at ({:.0}, {:.0}), transform: {}, scale: {}, {}\n",
+            screen.name,
+            screen.width,
+            screen.height,
+            screen.x,
+            screen.y,
+            screen.transform,
+            screen.scale,
+            if screen.enabled {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        ));
+    }
+    output.trim_end().to_string()
+}
+
+/// Format screen properties output
+pub fn format_screen_properties(screen: &ivi_client::IviScreen) -> String {
+    format!(
+        "Screen: {}\n  Resolution: {}x{}\n  Position: ({:.0}, {:.0})\n  Transform: {}\n  Scale: {}\n  Status: {}",
+        screen.name,
+        screen.width,
+        screen.height,
+        screen.x,
+        screen.y,
+        screen.transform,
+        screen.scale,
+        if screen.enabled { "enabled" } else { "disabled" }
+    )
+}
+
+/// Format screen layers output
+pub fn format_screen_layers(screen_name: &str, layer_ids: &[u32]) -> String {
+    if layer_ids.is_empty() {
+        return format!("Screen '{}' has no layers assigned", screen_name);
+    }
+
+    let mut output = format!(
+        "Screen '{}' has {} layer(s) (top to bottom):\n",
+        screen_name,
+        layer_ids.len()
+    );
+    for (index, &layer_id) in layer_ids.iter().enumerate() {
+        output.push_str(&format!("  {}. Layer {}\n", index + 1, layer_id));
+    }
+    output.trim_end().to_string()
+}
+
+/// Format layer screens output
+pub fn format_layer_screens(layer_id: u32, screen_names: &[String]) -> String {
+    if screen_names.is_empty() {
+        return format!("Layer {} is not assigned to any screens", layer_id);
+    }
+
+    let mut output = format!(
+        "Layer {} is assigned to {} screen(s):\n",
+        layer_id,
+        screen_names.len()
+    );
+    for screen_name in screen_names {
+        output.push_str(&format!("  {}\n", screen_name));
+    }
+    output.trim_end().to_string()
+}
+
+/// Format success message for screen set layers operation
+pub fn format_screen_set_layers_success(
+    screen_name: &str,
+    layer_ids: &[u32],
+    auto_commit: bool,
+) -> String {
+    let layer_list = layer_ids
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let commit_msg = if auto_commit { " and committed" } else { "" };
+    format_success(&format!(
+        "Screen '{}' layers set to [{}]{}",
+        screen_name, layer_list, commit_msg
+    ))
+}
+
+/// Format success message for screen remove layer operation
+pub fn format_screen_remove_layer_success(
+    screen_name: &str,
+    layer_id: u32,
+    auto_commit: bool,
+) -> String {
+    let commit_msg = if auto_commit { " and committed" } else { "" };
+    format_success(&format!(
+        "Layer {} removed from screen '{}'{}",
+        layer_id, screen_name, commit_msg
+    ))
+}
+
 /// Format a success message for commit operation
 pub fn format_commit_success() -> String {
     format_success("Changes committed")

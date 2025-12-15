@@ -7,7 +7,6 @@ use super::weston_output_m::WestonOutput;
 use super::weston_surface_m::WestonSurface;
 use super::IviLayoutTransitionType;
 use super::*;
-use crate::ffi::weston::weston_compositor;
 
 pub struct SurfaceSize {
     pub width: i32,
@@ -17,6 +16,7 @@ pub struct SurfaceSize {
 
 pub struct IviLayoutApi {
     api: *const ivi_layout_interface,
+    compositor: *mut crate::ffi::weston::weston_compositor,
 }
 
 // Safety: The IVI layout API is thread-safe as per Weston's design
@@ -28,11 +28,14 @@ impl IviLayoutApi {
         if api.is_null() {
             None
         } else {
-            Some(IviLayoutApi { api })
+            Some(IviLayoutApi {
+                api,
+                compositor: std::ptr::null_mut(),
+            })
         }
     }
 
-    pub fn new(compositor: *mut weston_compositor) -> Option<Self> {
+    pub fn new(compositor: *mut crate::ffi::weston::weston_compositor) -> Option<Self> {
         if compositor.is_null() {
             return None;
         }
@@ -41,7 +44,7 @@ impl IviLayoutApi {
         if api.is_null() {
             None
         } else {
-            Some(IviLayoutApi { api })
+            Some(IviLayoutApi { api, compositor })
         }
     }
 
@@ -186,7 +189,10 @@ impl IviLayoutApi {
             for i in 0..length as isize {
                 let handle = *array.offset(i);
                 if !handle.is_null() {
-                    let ivi_api = Arc::new(Self { api: self.api });
+                    let ivi_api = Arc::new(Self {
+                        api: self.api,
+                        compositor: self.compositor,
+                    });
                     if let Some(surface) = IviSurface::new(handle, ivi_api) {
                         surfaces.push(surface);
                     }
@@ -211,7 +217,13 @@ impl IviLayoutApi {
     pub fn get_surface_from_id(&self, id: u32) -> Option<IviSurface> {
         unsafe {
             let get_surface_fn = (*self.api).get_surface_from_id?;
-            IviSurface::new(get_surface_fn(id), Arc::new(Self { api: self.api }))
+            IviSurface::new(
+                get_surface_fn(id),
+                Arc::new(Self {
+                    api: self.api,
+                    compositor: self.compositor,
+                }),
+            )
         }
     }
 
@@ -247,7 +259,13 @@ impl IviLayoutApi {
             let mut surfaces = Vec::new();
             for i in 0..length as isize {
                 let handle = *array.offset(i);
-                if let Some(surface) = IviSurface::new(handle, Arc::new(Self { api: self.api })) {
+                if let Some(surface) = IviSurface::new(
+                    handle,
+                    Arc::new(Self {
+                        api: self.api,
+                        compositor: self.compositor,
+                    }),
+                ) {
                     surfaces.push(surface);
                 }
             }
@@ -465,7 +483,14 @@ impl IviLayoutApi {
                 .layer_create_with_dimension
                 .ok_or("layer_create_with_dimension function is null")?;
             let handle = create_layer_fn(id, width, height);
-            IviLayer::new(handle, Arc::new(Self { api: self.api })).ok_or("Failed to create layer")
+            IviLayer::new(
+                handle,
+                Arc::new(Self {
+                    api: self.api,
+                    compositor: self.compositor,
+                }),
+            )
+            .ok_or("Failed to create layer")
         }
     }
 
@@ -496,7 +521,10 @@ impl IviLayoutApi {
                 return Ok(Vec::new());
             }
 
-            let api = Arc::new(Self { api: self.api });
+            let api = Arc::new(Self {
+                api: self.api,
+                compositor: self.compositor,
+            });
             let mut layers = Vec::new();
 
             for i in 0..length as isize {
@@ -525,7 +553,13 @@ impl IviLayoutApi {
         unsafe {
             let get_layer_fn = (*self.api).get_layer_from_id?;
             let handle = get_layer_fn(id);
-            IviLayer::new(handle, Arc::new(Self { api: self.api }))
+            IviLayer::new(
+                handle,
+                Arc::new(Self {
+                    api: self.api,
+                    compositor: self.compositor,
+                }),
+            )
         }
     }
 
@@ -557,7 +591,10 @@ impl IviLayoutApi {
                 return Ok(Vec::new());
             }
 
-            let api = Arc::new(Self { api: self.api });
+            let api = Arc::new(Self {
+                api: self.api,
+                compositor: self.compositor,
+            });
             let mut layers = Vec::new();
 
             for i in 0..length as isize {
@@ -590,7 +627,10 @@ impl IviLayoutApi {
                 return Ok(Vec::new());
             }
 
-            let api = Arc::new(Self { api: self.api });
+            let api = Arc::new(Self {
+                api: self.api,
+                compositor: self.compositor,
+            });
             let mut layers = Vec::new();
 
             for i in 0..length as isize {
@@ -900,7 +940,13 @@ impl IviLayoutApi {
         unsafe {
             let get_surface_fn = (*self.api).get_surface?;
             let handle = get_surface_fn(surface.handle());
-            IviSurface::new(handle, Arc::new(Self { api: self.api }))
+            IviSurface::new(
+                handle,
+                Arc::new(Self {
+                    api: self.api,
+                    compositor: self.compositor,
+                }),
+            )
         }
     }
 
@@ -1013,5 +1059,39 @@ impl IviLayoutApi {
 
             Ok(())
         }
+    }
+
+    /// Get all screens (weston outputs) from the compositor
+    pub fn get_screens(&self) -> Vec<WestonOutput> {
+        let mut screens = Vec::new();
+
+        unsafe {
+            if self.compositor.is_null() {
+                return screens;
+            }
+
+            // Cast the opaque weston::weston_compositor to the full bindings::weston_compositor
+            let compositor_ptr = self.compositor as *const weston_compositor;
+
+            // Get the output_list from the compositor
+            let output_list = &(*compositor_ptr).output_list as *const wl_list as *mut wl_list;
+
+            // Iterate through the output list
+            let mut link = (*output_list).next;
+            while link != output_list {
+                // Calculate the weston_output pointer from the link offset
+                // Using container_of pattern: ptr = (type*)((char*)ptr - offset_of(type, member))
+                let offset = std::mem::offset_of!(weston_output, link);
+                let output_ptr = (link as *mut u8).sub(offset) as *mut weston_output;
+
+                if let Some(output) = WestonOutput::from(output_ptr) {
+                    screens.push(output);
+                }
+
+                link = (*link).next;
+            }
+        }
+
+        screens
     }
 }

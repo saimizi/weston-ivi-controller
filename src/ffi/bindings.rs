@@ -5,7 +5,7 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
-use jlogger_tracing::jdebug;
+use jlogger_tracing::{jdebug, jwarn};
 use serde::{Deserialize, Serialize};
 use std::ffi::CStr;
 use std::fmt::Display;
@@ -124,21 +124,29 @@ pub fn wl_fixed_t_to_f64(value: wl_fixed_t) -> f32 {
 /// Orientation of a surface
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Orientation {
-    Normal,    // 0 degrees
-    Rotate90,  // 90 degrees
-    Rotate180, // 180 degrees
-    Rotate270, // 270 degrees
+    Normal,     // 0 - No rotation
+    Rotate90,   // 1 - Rotate 90 degrees clockwise
+    Rotate180,  // 2 - Rotate 180 degrees
+    Rotate270,  // 3 - Rotate 270 degrees clockwise
+    Flipped,    // 4 - Horizontal flip (mirror)
+    Flipped90,  // 5 - Flip + rotate 90 degrees
+    Flipped180, // 6 - Flip + rotate 180 degrees
+    Flipped270, // 7 - Flip + rotate 270 degrees
 }
 
 impl Display for Orientation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let degrees = match self {
+        let name = match self {
             Orientation::Normal => "Normal",
             Orientation::Rotate90 => "Rotate90",
             Orientation::Rotate180 => "Rotate180",
             Orientation::Rotate270 => "Rotate270",
+            Orientation::Flipped => "Flipped",
+            Orientation::Flipped90 => "Flipped90",
+            Orientation::Flipped180 => "Flipped180",
+            Orientation::Flipped270 => "Flipped270",
         };
-        write!(f, "{}", degrees)
+        write!(f, "{}", name)
     }
 }
 
@@ -149,7 +157,17 @@ impl From<wl_output_transform> for Orientation {
             1 => Orientation::Rotate90,
             2 => Orientation::Rotate180,
             3 => Orientation::Rotate270,
-            _ => Orientation::Normal, // Default to normal for unknown values
+            4 => Orientation::Flipped,
+            5 => Orientation::Flipped90,
+            6 => Orientation::Flipped180,
+            7 => Orientation::Flipped270,
+            _ => {
+                jwarn!(
+                    "Unknown wl_output_transform value: {}, defaulting to Normal",
+                    value
+                );
+                Orientation::Normal
+            }
         }
     }
 }
@@ -161,12 +179,18 @@ impl From<Orientation> for wl_output_transform {
             Orientation::Rotate90 => 1,
             Orientation::Rotate180 => 2,
             Orientation::Rotate270 => 3,
+            Orientation::Flipped => 4,
+            Orientation::Flipped90 => 5,
+            Orientation::Flipped180 => 6,
+            Orientation::Flipped270 => 7,
         }
     }
 }
 
 impl Orientation {
     /// Create Orientation from degrees with validation
+    /// Note: Only supports rotation transforms (Normal, Rotate90, Rotate180, Rotate270).
+    /// Does not support flipped transforms.
     pub fn from_degrees(degrees: i32) -> Result<Self, String> {
         // Validate orientation
         crate::controller::validation::validate_orientation(degrees).map_err(|e| e.to_string())?;
@@ -184,12 +208,18 @@ impl Orientation {
     }
 
     /// Convert to degrees
+    /// Note: Only rotation transforms (Normal, Rotate90, Rotate180, Rotate270) return degrees.
+    /// Flipped transforms return the rotation component only (0 for Flipped, 90 for Flipped90, etc.)
     pub fn to_degrees(&self) -> i32 {
         match self {
             Orientation::Normal => 0,
             Orientation::Rotate90 => 90,
             Orientation::Rotate180 => 180,
             Orientation::Rotate270 => 270,
+            Orientation::Flipped => 0,      // Flip with no rotation
+            Orientation::Flipped90 => 90,   // Flip + 90 degrees
+            Orientation::Flipped180 => 180, // Flip + 180 degrees
+            Orientation::Flipped270 => 270, // Flip + 270 degrees
         }
     }
 }

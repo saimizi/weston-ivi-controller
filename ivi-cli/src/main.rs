@@ -35,6 +35,11 @@ enum Commands {
         #[command(subcommand)]
         command: LayerCommands,
     },
+    /// Screen management commands
+    Screen {
+        #[command(subcommand)]
+        command: ScreenCommands,
+    },
     /// Commit pending changes atomically
     Commit,
 }
@@ -161,6 +166,49 @@ enum LayerCommands {
         id: u32,
         /// Opacity value (0.0 to 1.0)
         opacity: f32,
+    },
+}
+
+/// Screen management commands
+#[derive(Subcommand)]
+enum ScreenCommands {
+    /// List all available screens
+    List,
+    /// Get properties of a specific screen
+    GetProperties {
+        /// Screen name (e.g., "HDMI-A-1")
+        name: String,
+    },
+    /// Get layers assigned to a screen
+    GetLayers {
+        /// Screen name
+        name: String,
+    },
+    /// Get screens assigned to a layer
+    GetScreensForLayer {
+        /// Layer ID
+        layer_id: u32,
+    },
+    /// Set layers on a screen (replaces all existing layers)
+    SetLayers {
+        /// Screen name
+        name: String,
+        /// Comma-separated list of layer IDs
+        #[arg(value_delimiter = ',')]
+        layer_ids: Vec<u32>,
+        /// Automatically commit changes
+        #[arg(long, default_value_t = false)]
+        auto_commit: bool,
+    },
+    /// Remove a layer from a screen
+    RemoveLayer {
+        /// Screen name
+        name: String,
+        /// Layer ID to remove
+        layer_id: u32,
+        /// Automatically commit changes
+        #[arg(long, default_value_t = false)]
+        auto_commit: bool,
     },
 }
 
@@ -367,6 +415,75 @@ fn handle_layer_set_opacity(
     Ok(output::format_layer_opacity_success(id, opacity))
 }
 
+/// Handle screen list command
+fn handle_screen_list(socket_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    let screens = client.list_screens()?;
+    Ok(output::format_screen_list(&screens))
+}
+
+/// Handle screen get properties command
+fn handle_screen_get_properties(
+    socket_path: &str,
+    name: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    let screen = client.get_screen(name)?;
+    Ok(output::format_screen_properties(&screen))
+}
+
+/// Handle screen get layers command
+fn handle_screen_get_layers(
+    socket_path: &str,
+    name: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    let layer_ids = client.get_screen_layers(name)?;
+    Ok(output::format_screen_layers(name, &layer_ids))
+}
+
+/// Handle get screens for layer command
+fn handle_screen_get_screens_for_layer(
+    socket_path: &str,
+    layer_id: u32,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    let screen_names = client.get_layer_screens(layer_id)?;
+    Ok(output::format_layer_screens(layer_id, &screen_names))
+}
+
+/// Handle screen set layers command
+fn handle_screen_set_layers(
+    socket_path: &str,
+    name: &str,
+    layer_ids: &[u32],
+    auto_commit: bool,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    client.add_layers_to_screen(name, layer_ids, auto_commit)?;
+    Ok(output::format_screen_set_layers_success(
+        name,
+        layer_ids,
+        auto_commit,
+    ))
+}
+
+/// Handle screen remove layer command
+fn handle_screen_remove_layer(
+    socket_path: &str,
+    name: &str,
+    layer_id: u32,
+    auto_commit: bool,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    client.remove_layer_from_screen(name, layer_id, auto_commit)?;
+    Ok(output::format_screen_remove_layer_success(
+        name,
+        layer_id,
+        auto_commit,
+    ))
+}
+
 /// Handle commit command
 fn handle_commit(socket_path: &str) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
@@ -432,6 +549,26 @@ fn main() {
             LayerCommands::SetOpacity { id, opacity } => {
                 handle_layer_set_opacity(&cli.socket, id, opacity)
             }
+        },
+        Commands::Screen { command } => match command {
+            ScreenCommands::List => handle_screen_list(&cli.socket),
+            ScreenCommands::GetProperties { name } => {
+                handle_screen_get_properties(&cli.socket, &name)
+            }
+            ScreenCommands::GetLayers { name } => handle_screen_get_layers(&cli.socket, &name),
+            ScreenCommands::GetScreensForLayer { layer_id } => {
+                handle_screen_get_screens_for_layer(&cli.socket, layer_id)
+            }
+            ScreenCommands::SetLayers {
+                name,
+                layer_ids,
+                auto_commit,
+            } => handle_screen_set_layers(&cli.socket, &name, &layer_ids, auto_commit),
+            ScreenCommands::RemoveLayer {
+                name,
+                layer_id,
+                auto_commit,
+            } => handle_screen_remove_layer(&cli.socket, &name, layer_id, auto_commit),
         },
         Commands::Commit => handle_commit(&cli.socket),
     };

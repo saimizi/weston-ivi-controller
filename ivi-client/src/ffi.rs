@@ -111,17 +111,24 @@ pub enum IviOrientation {
     Rotate90 = 1,
     Rotate180 = 2,
     Rotate270 = 3,
+    Flipped = 4,
+    Flipped90 = 5,
+    Flipped180 = 6,
+    Flipped270 = 7,
 }
 
 impl Display for IviOrientation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let degrees = match self {
-            IviOrientation::Normal => 0,
-            IviOrientation::Rotate90 => 90,
-            IviOrientation::Rotate180 => 180,
-            IviOrientation::Rotate270 => 270,
-        };
-        write!(f, "{} degrees", degrees)
+        match self {
+            IviOrientation::Normal => write!(f, "Normal"),
+            IviOrientation::Rotate90 => write!(f, "Rotate90"),
+            IviOrientation::Rotate180 => write!(f, "Rotate180"),
+            IviOrientation::Rotate270 => write!(f, "Rotate270"),
+            IviOrientation::Flipped => write!(f, "Flipped"),
+            IviOrientation::Flipped90 => write!(f, "Flipped90"),
+            IviOrientation::Flipped180 => write!(f, "Flipped180"),
+            IviOrientation::Flipped270 => write!(f, "Flipped270"),
+        }
     }
 }
 
@@ -146,6 +153,20 @@ pub struct IviLayer {
     pub id: LayerId,
     pub visibility: bool,
     pub opacity: f32,
+}
+
+/// C-compatible screen structure
+#[repr(C)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IviScreen {
+    pub name: String,
+    pub width: i32,
+    pub height: i32,
+    pub x: f64,
+    pub y: f64,
+    pub transform: IviOrientation,
+    pub enabled: bool,
+    pub scale: i32,
 }
 
 /// Helper function to write error message to C buffer

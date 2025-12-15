@@ -52,6 +52,10 @@ typedef enum IviOrientation {
     ROTATE90 = 1,
     ROTATE180 = 2,
     ROTATE270 = 3,
+    FLIPPED = 4,
+    FLIPPED90 = 5,
+    FLIPPED180 = 6,
+    FLIPPED270 = 7,
 } IviOrientation;
 
 /*

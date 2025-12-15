@@ -354,5 +354,9 @@ mod tests {
         assert_eq!(Orientation::Rotate90.to_string(), "Rotate90");
         assert_eq!(Orientation::Rotate180.to_string(), "Rotate180");
         assert_eq!(Orientation::Rotate270.to_string(), "Rotate270");
+        assert_eq!(Orientation::Flipped.to_string(), "Flipped");
+        assert_eq!(Orientation::Flipped90.to_string(), "Flipped90");
+        assert_eq!(Orientation::Flipped180.to_string(), "Flipped180");
+        assert_eq!(Orientation::Flipped270.to_string(), "Flipped270");
     }
 }

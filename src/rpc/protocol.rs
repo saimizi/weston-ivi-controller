@@ -264,6 +264,27 @@ pub enum RpcMethod {
         id: u32,
         opacity: f32,
     },
+    // Screen operations
+    ListScreens,
+    GetScreen {
+        name: String,
+    },
+    GetScreenLayers {
+        screen_name: String,
+    },
+    GetLayerScreens {
+        layer_id: u32,
+    },
+    AddLayersToScreen {
+        screen_name: String,
+        layer_ids: Vec<u32>,
+        auto_commit: bool,
+    },
+    RemoveLayerFromScreen {
+        screen_name: String,
+        layer_id: u32,
+        auto_commit: bool,
+    },
 }
 
 impl RpcMethod {
@@ -668,6 +689,122 @@ impl RpcMethod {
                         )
                     })? as f32;
                 Ok(RpcMethod::SetLayerOpacity { id, opacity })
+            }
+
+            // Screen operations
+            "list_screens" => Ok(RpcMethod::ListScreens),
+
+            "get_screen" => {
+                let name = request
+                    .params
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'name' parameter".to_string())
+                    })?
+                    .to_string();
+                Ok(RpcMethod::GetScreen { name })
+            }
+
+            "get_screen_layers" => {
+                let screen_name = request
+                    .params
+                    .get("screen_name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'screen_name' parameter".to_string(),
+                        )
+                    })?
+                    .to_string();
+                Ok(RpcMethod::GetScreenLayers { screen_name })
+            }
+
+            "get_layer_screens" => {
+                let layer_id = request
+                    .params
+                    .get("layer_id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'layer_id' parameter".to_string(),
+                        )
+                    })? as u32;
+                Ok(RpcMethod::GetLayerScreens { layer_id })
+            }
+
+            "add_layers_to_screen" => {
+                let screen_name = request
+                    .params
+                    .get("screen_name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'screen_name' parameter".to_string(),
+                        )
+                    })?
+                    .to_string();
+                let layer_ids = request
+                    .params
+                    .get("layer_ids")
+                    .and_then(|v| v.as_array())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'layer_ids' parameter".to_string(),
+                        )
+                    })?
+                    .iter()
+                    .map(|v| {
+                        v.as_u64().ok_or_else(|| {
+                            RpcError::invalid_params("Invalid layer_id in array".to_string())
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .map(|v| v as u32)
+                    .collect();
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Ok(RpcMethod::AddLayersToScreen {
+                    screen_name,
+                    layer_ids,
+                    auto_commit,
+                })
+            }
+
+            "remove_layer_from_screen" => {
+                let screen_name = request
+                    .params
+                    .get("screen_name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'screen_name' parameter".to_string(),
+                        )
+                    })?
+                    .to_string();
+                let layer_id = request
+                    .params
+                    .get("layer_id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'layer_id' parameter".to_string(),
+                        )
+                    })? as u32;
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Ok(RpcMethod::RemoveLayerFromScreen {
+                    screen_name,
+                    layer_id,
+                    auto_commit,
+                })
             }
 
             _ => Err(RpcError::method_not_found(request.method.clone())),
