@@ -239,6 +239,23 @@ impl RpcHandler {
             RpcMethod::SetLayerOpacity { id, opacity } => {
                 self.handle_set_layer_opacity(id, opacity, auto_commit)
             }
+            // Layer-surface assignment operations
+            RpcMethod::SetLayerSurfaces {
+                layer_id,
+                surface_ids,
+                auto_commit,
+            } => self.handle_set_layer_surfaces(layer_id, surface_ids, auto_commit),
+            RpcMethod::AddSurfaceToLayer {
+                layer_id,
+                surface_id,
+                auto_commit,
+            } => self.handle_add_surface_to_layer(layer_id, surface_id, auto_commit),
+            RpcMethod::RemoveSurfaceFromLayer {
+                layer_id,
+                surface_id,
+                auto_commit,
+            } => self.handle_remove_surface_from_layer(layer_id, surface_id, auto_commit),
+            RpcMethod::GetLayerSurfaces { layer_id } => self.handle_get_layer_surfaces(layer_id),
             // Screen operations
             RpcMethod::ListScreens => self.handle_list_screens(),
             RpcMethod::GetScreen { name } => self.handle_get_screen(name),
@@ -915,6 +932,195 @@ impl RpcHandler {
         }
 
         Ok(json!({ "success": true, "committed": auto_commit }))
+    }
+
+    /// Handle set_layer_surfaces: Replace all surfaces on a layer
+    fn handle_set_layer_surfaces(
+        &self,
+        layer_id: u32,
+        surface_ids: Vec<u32>,
+        auto_commit: bool,
+    ) -> Result<serde_json::Value, RpcError> {
+        jdebug!(
+            "Setting layer {} surfaces to {:?} [auto_commit={}]",
+            layer_id,
+            surface_ids,
+            auto_commit
+        );
+
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+
+        // Get layer and verify it exists
+        let layer = ivi_api
+            .get_layer_from_id(layer_id)
+            .ok_or_else(|| RpcError::internal_error(format!("Layer {} not found", layer_id)))?;
+
+        // Build surface vector by getting each surface from ID
+        let surfaces: Vec<_> = surface_ids
+            .iter()
+            .filter_map(|&id| ivi_api.get_surface_from_id(id))
+            .collect();
+
+        // Verify all surfaces were found
+        if surfaces.len() != surface_ids.len() {
+            return Err(RpcError::internal_error(
+                "Some surfaces not found".to_string(),
+            ));
+        }
+
+        drop(state_manager);
+
+        // Build reference slice: first = bottommost, last = topmost
+        let surface_refs: Vec<&_> = surfaces.iter().collect();
+
+        // Set render order
+        ivi_api
+            .layer_set_render_order(&layer, &surface_refs)
+            .map_err(|e| RpcError::internal_error(format!("Failed to set render order: {}", e)))?;
+
+        // Commit if requested
+        if auto_commit {
+            ivi_api
+                .commit_changes()
+                .map_err(|e| RpcError::internal_error(e.to_string()))?;
+        }
+
+        Ok(json!({
+            "layer_id": layer_id,
+            "surface_ids": surface_ids,
+            "committed": auto_commit
+        }))
+    }
+
+    /// Handle add_surface_to_layer: Add a surface as topmost
+    fn handle_add_surface_to_layer(
+        &self,
+        layer_id: u32,
+        surface_id: u32,
+        auto_commit: bool,
+    ) -> Result<serde_json::Value, RpcError> {
+        jdebug!(
+            "Adding surface {} to layer {} as topmost [auto_commit={}]",
+            surface_id,
+            layer_id,
+            auto_commit
+        );
+
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+
+        // Get layer and verify it exists
+        let layer = ivi_api
+            .get_layer_from_id(layer_id)
+            .ok_or_else(|| RpcError::internal_error(format!("Layer {} not found", layer_id)))?;
+
+        // Get current surfaces on the layer
+        let mut surfaces = ivi_api.get_surfaces_on_layer(&layer);
+
+        // Get new surface and verify it exists
+        let new_surface = ivi_api
+            .get_surface_from_id(surface_id)
+            .ok_or_else(|| RpcError::internal_error(format!("Surface {} not found", surface_id)))?;
+
+        drop(state_manager);
+
+        // Append new surface to end (topmost position)
+        surfaces.push(new_surface);
+
+        // Build reference slice
+        let surface_refs: Vec<&_> = surfaces.iter().collect();
+
+        // Set render order
+        ivi_api
+            .layer_set_render_order(&layer, &surface_refs)
+            .map_err(|e| RpcError::internal_error(format!("Failed to set render order: {}", e)))?;
+
+        // Commit if requested
+        if auto_commit {
+            ivi_api
+                .commit_changes()
+                .map_err(|e| RpcError::internal_error(e.to_string()))?;
+        }
+
+        Ok(json!({
+            "layer_id": layer_id,
+            "surface_id": surface_id,
+            "committed": auto_commit
+        }))
+    }
+
+    /// Handle remove_surface_from_layer: Remove a surface from a layer
+    fn handle_remove_surface_from_layer(
+        &self,
+        layer_id: u32,
+        surface_id: u32,
+        auto_commit: bool,
+    ) -> Result<serde_json::Value, RpcError> {
+        jdebug!(
+            "Removing surface {} from layer {} [auto_commit={}]",
+            surface_id,
+            layer_id,
+            auto_commit
+        );
+
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+
+        // Get layer and verify it exists
+        let layer = ivi_api
+            .get_layer_from_id(layer_id)
+            .ok_or_else(|| RpcError::internal_error(format!("Layer {} not found", layer_id)))?;
+
+        // Get surface to remove and verify it exists
+        let surface = ivi_api
+            .get_surface_from_id(surface_id)
+            .ok_or_else(|| RpcError::internal_error(format!("Surface {} not found", surface_id)))?;
+
+        drop(state_manager);
+
+        // Remove surface from layer
+        ivi_api
+            .layer_remove_surface(&layer, &surface)
+            .map_err(|e| {
+                RpcError::internal_error(format!("Failed to remove surface from layer: {}", e))
+            })?;
+
+        // Commit if requested
+        if auto_commit {
+            ivi_api
+                .commit_changes()
+                .map_err(|e| RpcError::internal_error(e.to_string()))?;
+        }
+
+        Ok(json!({
+            "layer_id": layer_id,
+            "surface_id": surface_id,
+            "committed": auto_commit
+        }))
+    }
+
+    /// Handle get_layer_surfaces: Get surfaces assigned to a layer
+    fn handle_get_layer_surfaces(&self, layer_id: u32) -> Result<serde_json::Value, RpcError> {
+        jdebug!("Getting surfaces for layer {}", layer_id);
+
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+
+        // Get layer and verify it exists
+        let layer = ivi_api
+            .get_layer_from_id(layer_id)
+            .ok_or_else(|| RpcError::internal_error(format!("Layer {} not found", layer_id)))?;
+
+        drop(state_manager);
+
+        // Get surfaces on the layer
+        let surfaces = ivi_api.get_surfaces_on_layer(&layer);
+
+        // Extract surface IDs (order preserved: first = bottommost, last = topmost)
+        let surface_ids: Vec<u32> = surfaces.iter().map(|s| s.id()).collect();
+
+        Ok(json!({ "surface_ids": surface_ids }))
     }
 }
 

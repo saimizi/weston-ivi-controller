@@ -883,6 +883,140 @@ impl IviClient {
         Ok(())
     }
 
+    /// Sets the complete list of surfaces on a layer, replacing any existing surfaces.
+    ///
+    /// The z-order is determined by the position in the array:
+    /// - First surface ID = bottommost (rendered first, behind others)
+    /// - Last surface ID = topmost (rendered last, in front of others)
+    ///
+    /// # Arguments
+    ///
+    /// * `layer_id` - The ID of the layer
+    /// * `surface_ids` - Array of surface IDs in z-order (first=bottom, last=top)
+    /// * `auto_commit` - If true, automatically commits the changes
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the layer or any surface is not found, or communication fails.
+    pub fn set_surfaces_on_layer(
+        &mut self,
+        layer_id: u32,
+        surface_ids: &[u32],
+        auto_commit: bool,
+    ) -> Result<()> {
+        use serde_json::json;
+
+        self.send_request(
+            "set_layer_surfaces",
+            json!({
+                "layer_id": layer_id,
+                "surface_ids": surface_ids,
+                "auto_commit": auto_commit
+            }),
+        )?;
+        Ok(())
+    }
+
+    /// Adds a single surface to a layer as the topmost surface.
+    ///
+    /// The surface will be rendered on top of all other surfaces currently on the layer.
+    ///
+    /// # Arguments
+    ///
+    /// * `layer_id` - The ID of the layer
+    /// * `surface_id` - The ID of the surface to add
+    /// * `auto_commit` - If true, automatically commits the changes
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the layer or surface is not found, or communication fails.
+    pub fn add_surface_to_layer(
+        &mut self,
+        layer_id: u32,
+        surface_id: u32,
+        auto_commit: bool,
+    ) -> Result<()> {
+        use serde_json::json;
+
+        self.send_request(
+            "add_surface_to_layer",
+            json!({
+                "layer_id": layer_id,
+                "surface_id": surface_id,
+                "auto_commit": auto_commit
+            }),
+        )?;
+        Ok(())
+    }
+
+    /// Removes a surface from a layer.
+    ///
+    /// # Arguments
+    ///
+    /// * `layer_id` - The ID of the layer
+    /// * `surface_id` - The ID of the surface to remove
+    /// * `auto_commit` - If true, automatically commits the changes
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the layer or surface is not found, or communication fails.
+    pub fn remove_surface_from_layer(
+        &mut self,
+        layer_id: u32,
+        surface_id: u32,
+        auto_commit: bool,
+    ) -> Result<()> {
+        use serde_json::json;
+
+        self.send_request(
+            "remove_surface_from_layer",
+            json!({
+                "layer_id": layer_id,
+                "surface_id": surface_id,
+                "auto_commit": auto_commit
+            }),
+        )?;
+        Ok(())
+    }
+
+    /// Gets the list of surface IDs currently assigned to a layer.
+    ///
+    /// Returns surfaces in z-order:
+    /// - First ID = bottommost (rendered first, behind others)
+    /// - Last ID = topmost (rendered last, in front of others)
+    ///
+    /// # Arguments
+    ///
+    /// * `layer_id` - The ID of the layer
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of surface IDs in z-order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the layer is not found or communication fails.
+    pub fn get_layer_surfaces(&mut self, layer_id: u32) -> Result<Vec<u32>> {
+        use serde_json::json;
+
+        let response = self.send_request("get_layer_surfaces", json!({ "layer_id": layer_id }))?;
+        let surface_ids: Vec<u32> = serde_json::from_value(response["surface_ids"].clone())
+            .map_err(|e| IviError::DeserializationError(e.to_string()))?;
+        Ok(surface_ids)
+    }
+
     /// Commits all pending changes to the IVI compositor atomically.
     ///
     /// This method applies all pending surface and layer modifications in a single

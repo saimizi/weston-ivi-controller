@@ -264,6 +264,25 @@ pub enum RpcMethod {
         id: u32,
         opacity: f32,
     },
+    // Layer-surface assignment operations
+    SetLayerSurfaces {
+        layer_id: u32,
+        surface_ids: Vec<u32>,
+        auto_commit: bool,
+    },
+    AddSurfaceToLayer {
+        layer_id: u32,
+        surface_id: u32,
+        auto_commit: bool,
+    },
+    RemoveSurfaceFromLayer {
+        layer_id: u32,
+        surface_id: u32,
+        auto_commit: bool,
+    },
+    GetLayerSurfaces {
+        layer_id: u32,
+    },
     // Screen operations
     ListScreens,
     GetScreen {
@@ -689,6 +708,116 @@ impl RpcMethod {
                         )
                     })? as f32;
                 Ok(RpcMethod::SetLayerOpacity { id, opacity })
+            }
+
+            // Layer-surface assignment operations
+            "set_layer_surfaces" => {
+                let layer_id = request
+                    .params
+                    .get("layer_id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'layer_id' parameter".to_string(),
+                        )
+                    })? as u32;
+                let surface_ids = request
+                    .params
+                    .get("surface_ids")
+                    .and_then(|v| v.as_array())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'surface_ids' parameter".to_string(),
+                        )
+                    })?
+                    .iter()
+                    .filter_map(|v| v.as_u64().map(|n| n as u32))
+                    .collect();
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Ok(RpcMethod::SetLayerSurfaces {
+                    layer_id,
+                    surface_ids,
+                    auto_commit,
+                })
+            }
+
+            "add_surface_to_layer" => {
+                let layer_id = request
+                    .params
+                    .get("layer_id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'layer_id' parameter".to_string(),
+                        )
+                    })? as u32;
+                let surface_id = request
+                    .params
+                    .get("surface_id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'surface_id' parameter".to_string(),
+                        )
+                    })? as u32;
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Ok(RpcMethod::AddSurfaceToLayer {
+                    layer_id,
+                    surface_id,
+                    auto_commit,
+                })
+            }
+
+            "remove_surface_from_layer" => {
+                let layer_id = request
+                    .params
+                    .get("layer_id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'layer_id' parameter".to_string(),
+                        )
+                    })? as u32;
+                let surface_id = request
+                    .params
+                    .get("surface_id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'surface_id' parameter".to_string(),
+                        )
+                    })? as u32;
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Ok(RpcMethod::RemoveSurfaceFromLayer {
+                    layer_id,
+                    surface_id,
+                    auto_commit,
+                })
+            }
+
+            "get_layer_surfaces" => {
+                let layer_id = request
+                    .params
+                    .get("layer_id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params(
+                            "Missing or invalid 'layer_id' parameter".to_string(),
+                        )
+                    })? as u32;
+                Ok(RpcMethod::GetLayerSurfaces { layer_id })
             }
 
             // Screen operations

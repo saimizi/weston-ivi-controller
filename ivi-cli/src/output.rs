@@ -650,6 +650,67 @@ pub fn format_screen_remove_layer_success(
     ))
 }
 
+/// Format layer surfaces list output
+pub fn format_layer_surfaces(layer_id: u32, surface_ids: &[u32]) -> String {
+    if surface_ids.is_empty() {
+        return format!("Layer {} has no surfaces assigned", layer_id);
+    }
+
+    let mut output = format!(
+        "Layer {} has {} surface(s) (bottom to top):\n",
+        layer_id,
+        surface_ids.len()
+    );
+    for (index, &surface_id) in surface_ids.iter().enumerate() {
+        output.push_str(&format!("  {}. Surface {}\n", index + 1, surface_id));
+    }
+    output.trim_end().to_string()
+}
+
+/// Format success message for layer set surfaces operation
+pub fn format_layer_set_surfaces_success(
+    layer_id: u32,
+    surface_ids: &[u32],
+    auto_commit: bool,
+) -> String {
+    let surface_list = surface_ids
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let commit_msg = if auto_commit { " and committed" } else { "" };
+    format_success(&format!(
+        "Layer {} surfaces set to [{}]{}",
+        layer_id, surface_list, commit_msg
+    ))
+}
+
+/// Format success message for layer add surface operation
+pub fn format_layer_add_surface_success(
+    layer_id: u32,
+    surface_id: u32,
+    auto_commit: bool,
+) -> String {
+    let commit_msg = if auto_commit { " and committed" } else { "" };
+    format_success(&format!(
+        "Surface {} added to layer {}{}",
+        surface_id, layer_id, commit_msg
+    ))
+}
+
+/// Format success message for layer remove surface operation
+pub fn format_layer_remove_surface_success(
+    layer_id: u32,
+    surface_id: u32,
+    auto_commit: bool,
+) -> String {
+    let commit_msg = if auto_commit { " and committed" } else { "" };
+    format_success(&format!(
+        "Surface {} removed from layer {}{}",
+        surface_id, layer_id, commit_msg
+    ))
+}
+
 /// Format a success message for commit operation
 pub fn format_commit_success() -> String {
     format_success("Changes committed")

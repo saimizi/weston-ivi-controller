@@ -59,6 +59,7 @@ enum SurfaceCommands {
         /// Surface ID
         id: u32,
         /// Visibility (true or false)
+        #[arg(action = clap::ArgAction::Set)]
         visible: bool,
     },
     /// Set surface opacity
@@ -158,6 +159,7 @@ enum LayerCommands {
         /// Layer ID
         id: u32,
         /// Visibility (true or false)
+        #[arg(action = clap::ArgAction::Set)]
         visible: bool,
     },
     /// Set layer opacity
@@ -166,6 +168,42 @@ enum LayerCommands {
         id: u32,
         /// Opacity value (0.0 to 1.0)
         opacity: f32,
+    },
+    /// Set surfaces on a layer (replaces all existing surfaces)
+    SetSurfaces {
+        /// Layer ID
+        layer_id: u32,
+        /// Comma-separated list of surface IDs (first=bottommost, last=topmost)
+        #[arg(value_delimiter = ',')]
+        surface_ids: Vec<u32>,
+        /// Automatically commit changes
+        #[arg(long, default_value_t = false)]
+        auto_commit: bool,
+    },
+    /// Add a single surface to a layer as topmost
+    AddSurface {
+        /// Layer ID
+        layer_id: u32,
+        /// Surface ID to add
+        surface_id: u32,
+        /// Automatically commit changes
+        #[arg(long, default_value_t = false)]
+        auto_commit: bool,
+    },
+    /// Remove a surface from a layer
+    RemoveSurface {
+        /// Layer ID
+        layer_id: u32,
+        /// Surface ID to remove
+        surface_id: u32,
+        /// Automatically commit changes
+        #[arg(long, default_value_t = false)]
+        auto_commit: bool,
+    },
+    /// List surfaces on a layer
+    GetSurfaces {
+        /// Layer ID
+        layer_id: u32,
     },
 }
 
@@ -415,6 +453,64 @@ fn handle_layer_set_opacity(
     Ok(output::format_layer_opacity_success(id, opacity))
 }
 
+/// Handle layer set surfaces command
+fn handle_layer_set_surfaces(
+    socket_path: &str,
+    layer_id: u32,
+    surface_ids: &[u32],
+    auto_commit: bool,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    client.set_surfaces_on_layer(layer_id, surface_ids, auto_commit)?;
+    Ok(output::format_layer_set_surfaces_success(
+        layer_id,
+        surface_ids,
+        auto_commit,
+    ))
+}
+
+/// Handle layer add surface command
+fn handle_layer_add_surface(
+    socket_path: &str,
+    layer_id: u32,
+    surface_id: u32,
+    auto_commit: bool,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    client.add_surface_to_layer(layer_id, surface_id, auto_commit)?;
+    Ok(output::format_layer_add_surface_success(
+        layer_id,
+        surface_id,
+        auto_commit,
+    ))
+}
+
+/// Handle layer remove surface command
+fn handle_layer_remove_surface(
+    socket_path: &str,
+    layer_id: u32,
+    surface_id: u32,
+    auto_commit: bool,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    client.remove_surface_from_layer(layer_id, surface_id, auto_commit)?;
+    Ok(output::format_layer_remove_surface_success(
+        layer_id,
+        surface_id,
+        auto_commit,
+    ))
+}
+
+/// Handle layer get surfaces command
+fn handle_layer_get_surfaces(
+    socket_path: &str,
+    layer_id: u32,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    let surface_ids = client.get_layer_surfaces(layer_id)?;
+    Ok(output::format_layer_surfaces(layer_id, &surface_ids))
+}
+
 /// Handle screen list command
 fn handle_screen_list(socket_path: &str) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
@@ -548,6 +644,24 @@ fn main() {
             }
             LayerCommands::SetOpacity { id, opacity } => {
                 handle_layer_set_opacity(&cli.socket, id, opacity)
+            }
+            LayerCommands::SetSurfaces {
+                layer_id,
+                surface_ids,
+                auto_commit,
+            } => handle_layer_set_surfaces(&cli.socket, layer_id, &surface_ids, auto_commit),
+            LayerCommands::AddSurface {
+                layer_id,
+                surface_id,
+                auto_commit,
+            } => handle_layer_add_surface(&cli.socket, layer_id, surface_id, auto_commit),
+            LayerCommands::RemoveSurface {
+                layer_id,
+                surface_id,
+                auto_commit,
+            } => handle_layer_remove_surface(&cli.socket, layer_id, surface_id, auto_commit),
+            LayerCommands::GetSurfaces { layer_id } => {
+                handle_layer_get_surfaces(&cli.socket, layer_id)
             }
         },
         Commands::Screen { command } => match command {
