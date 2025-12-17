@@ -70,12 +70,12 @@ Surface IDs: 1000, 1001, 1002
 Display detailed properties of a specific surface:
 
 ```bash
-ivi_cli surface get-properties <SURFACE_ID>
+ivi_cli surface get-props <SURFACE_ID>
 ```
 
 Example:
 ```bash
-ivi_cli surface get-properties 1000
+ivi_cli surface get-props 1000
 ```
 
 Example output:
@@ -192,12 +192,12 @@ Layer IDs: 2000, 2001
 Display detailed properties of a specific layer:
 
 ```bash
-ivi_cli layer get-properties <LAYER_ID>
+ivi_cli layer get-props <LAYER_ID>
 ```
 
 Example:
 ```bash
-ivi_cli layer get-properties 2000
+ivi_cli layer get-props 2000
 ```
 
 Example output:
@@ -263,7 +263,7 @@ ivi_cli surface set-opacity 1000 0.8 --commit
 ivi_cli surface list
 
 # Get properties of surface 1000
-ivi_cli surface get-properties 1000
+ivi_cli surface get-props 1000
 
 # Make surface visible and set opacity
 ivi_cli surface set-visibility 1000 true

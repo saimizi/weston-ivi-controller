@@ -50,7 +50,7 @@ enum SurfaceCommands {
     /// List all available surfaces
     List,
     /// Get properties of a specific surface
-    GetProperties {
+    GetProps {
         /// Surface ID
         id: u32,
     },
@@ -115,7 +115,7 @@ enum LayerCommands {
     /// List all available layers
     List,
     /// Get properties of a specific layer
-    GetProperties {
+    GetProps {
         /// Layer ID
         id: u32,
     },
@@ -204,7 +204,7 @@ enum ScreenCommands {
     /// List all available screens
     List,
     /// Get properties of a specific screen
-    GetProperties {
+    GetProps {
         /// Screen name (e.g., "HDMI-A-1")
         name: String,
     },
@@ -267,7 +267,7 @@ fn handle_surface_list(socket_path: &str) -> Result<String, Box<dyn std::error::
     Ok(output::format_surface_list(&surfaces))
 }
 
-/// Handle surface get-properties command
+/// Handle surface get-props command
 fn handle_surface_get_properties(
     socket_path: &str,
     id: u32,
@@ -360,7 +360,7 @@ fn handle_layer_list(socket_path: &str) -> Result<String, Box<dyn std::error::Er
     Ok(output::format_layer_list(&layers))
 }
 
-/// Handle layer get-properties command
+/// Handle layer get-props command
 fn handle_layer_get_properties(
     socket_path: &str,
     id: u32,
@@ -565,7 +565,7 @@ fn main() {
     let result = match cli.command {
         Commands::Surface { command } => match command {
             SurfaceCommands::List => handle_surface_list(&cli.socket),
-            SurfaceCommands::GetProperties { id } => handle_surface_get_properties(&cli.socket, id),
+            SurfaceCommands::GetProps { id } => handle_surface_get_properties(&cli.socket, id),
             SurfaceCommands::SetVisibility { id, visible } => {
                 handle_surface_set_visibility(&cli.socket, id, visible)
             }
@@ -593,7 +593,7 @@ fn main() {
         },
         Commands::Layer { command } => match command {
             LayerCommands::List => handle_layer_list(&cli.socket),
-            LayerCommands::GetProperties { id } => handle_layer_get_properties(&cli.socket, id),
+            LayerCommands::GetProps { id } => handle_layer_get_properties(&cli.socket, id),
             LayerCommands::Create { id, width, height } => {
                 handle_layer_create_layer(&cli.socket, id, width, height)
             }
@@ -635,9 +635,7 @@ fn main() {
         },
         Commands::Screen { command } => match command {
             ScreenCommands::List => handle_screen_list(&cli.socket),
-            ScreenCommands::GetProperties { name } => {
-                handle_screen_get_properties(&cli.socket, &name)
-            }
+            ScreenCommands::GetProps { name } => handle_screen_get_properties(&cli.socket, &name),
             ScreenCommands::GetLayers { name } => handle_screen_get_layers(&cli.socket, &name),
             ScreenCommands::GetScreensForLayer { layer_id } => {
                 handle_screen_get_screens_for_layer(&cli.socket, layer_id)
