@@ -272,8 +272,13 @@ pub fn format_surface_properties(surface: &IviSurface) -> String {
 /// ```
 pub fn format_layer_properties(layer: &IviLayer) -> String {
     format!(
-        "Layer {}:\n  Visibility: {}\n  Opacity: {:.2}",
-        layer.id, layer.visibility, layer.opacity
+        "Layer {}:\n  SrcRect: {}\n  DestRect: {}\n Visibility: {}\n  Opacity: {:.2}\n  Orientation: {}",
+        layer.id,
+        layer.src_rect,
+        layer.dest_rect,
+        layer.visibility,
+        layer.opacity,
+        layer.orientation
     )
 }
 

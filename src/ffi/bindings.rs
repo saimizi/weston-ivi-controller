@@ -94,7 +94,7 @@ impl From<NotificationMask> for ivi_layout_notification_mask {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Default)]
 pub struct Rectangle {
     pub x: i32,
     pub y: i32,

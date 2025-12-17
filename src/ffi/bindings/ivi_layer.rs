@@ -55,6 +55,17 @@ impl IviLayer {
         self.properties().map(|p| p.source_rectangle())
     }
 
+    /// Get layer destination rectangle
+    pub fn destination_rectangle(&self) -> Option<Rectangle> {
+        self.properties().map(|p| p.destination_rectangle())
+    }
+
+    /// Get layer orientation
+    pub fn orientation(&self) -> Orientation {
+        self.properties()
+            .map_or(Orientation::Normal, |p| p.orientation())
+    }
+
     /// Set layer source rectangle
     pub fn set_source_rectangle(&mut self, rect: Rectangle) -> Result<(), String> {
         self.api

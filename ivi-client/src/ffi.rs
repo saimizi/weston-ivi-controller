@@ -151,8 +151,11 @@ pub struct IviSurface {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IviLayer {
     pub id: LayerId,
+    pub src_rect: Rectangle,
+    pub dest_rect: Rectangle,
     pub visibility: bool,
     pub opacity: f32,
+    pub orientation: IviOrientation,
 }
 
 /// C-compatible screen structure

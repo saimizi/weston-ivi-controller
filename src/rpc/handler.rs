@@ -700,8 +700,21 @@ impl RpcHandler {
             .map(|layer| {
                 json!({
                     "id": layer.id,
+                    "src_rect": {
+                        "x": layer.src_rect.0,
+                        "y": layer.src_rect.1,
+                        "width": layer.src_rect.2,
+                        "height": layer.src_rect.3,
+                    },
+                    "dest_rect": {
+                        "x": layer.dest_rect.0,
+                        "y": layer.dest_rect.1,
+                        "width": layer.dest_rect.2,
+                        "height": layer.dest_rect.3,
+                    },
                     "visibility": layer.visibility,
                     "opacity": layer.opacity,
+                    "orientation": layer.orientation,
                 })
             })
             .collect();
@@ -753,8 +766,21 @@ impl RpcHandler {
                 jdebug!("Retrieved layer {}", id);
                 Ok(json!({
                     "id": layer.id,
+                    "src_rect": {
+                        "x": layer.src_rect.0,
+                        "y": layer.src_rect.1,
+                        "width": layer.src_rect.2,
+                        "height": layer.src_rect.3,
+                    },
+                    "dest_rect": {
+                        "x": layer.dest_rect.0,
+                        "y": layer.dest_rect.1,
+                        "width": layer.dest_rect.2,
+                        "height": layer.dest_rect.3,
+                    },
                     "visibility": layer.visibility,
                     "opacity": layer.opacity,
+                    "orientation": layer.orientation,
                 }))
             }
             None => {

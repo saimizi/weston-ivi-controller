@@ -114,8 +114,11 @@ typedef uint32_t LayerId;
  */
 typedef struct IviLayer {
     LayerId id;
+    struct Rectangle src_rect;
+    struct Rectangle dest_rect;
     bool visibility;
     float opacity;
+    enum IviOrientation orientation;
 } IviLayer;
 
 /*

@@ -27,6 +27,9 @@ pub struct LayerState {
     pub id: u32,
     pub visibility: bool,
     pub opacity: f32,
+    pub src_rect: (i32, i32, i32, i32),  // (x, y, width, height)
+    pub dest_rect: (i32, i32, i32, i32), // (x, y, width, height)
+    pub orientation: Orientation,
 }
 
 /// Manages the state of all IVI surfaces and layers
@@ -489,11 +492,17 @@ impl StateManager {
         if let Some(layer) = self.ivi_api.get_layer_from_id(layer_id) {
             let visibility = layer.visibility();
             let opacity = layer.opacity();
+            let src_rect = layer.source_rectangle().unwrap_or_default();
+            let dest_rect = layer.destination_rectangle().unwrap_or_default();
+            let orientation = layer.orientation();
 
             let state = LayerState {
                 id: layer_id,
                 visibility,
                 opacity,
+                src_rect: (src_rect.x, src_rect.y, src_rect.width, src_rect.height),
+                dest_rect: (dest_rect.x, dest_rect.y, dest_rect.width, dest_rect.height),
+                orientation,
             };
 
             self.add_layer(layer_id, state);
@@ -525,11 +534,17 @@ impl StateManager {
             let event_mask = layer.event_mask();
             let visibility = layer.visibility();
             let opacity = layer.opacity();
+            let src_rect = layer.source_rectangle().unwrap_or_default();
+            let dest_rect = layer.destination_rectangle().unwrap_or_default();
+            let orientation = layer.orientation();
 
             let new_state = LayerState {
                 id: layer_id,
                 visibility,
                 opacity,
+                src_rect: (src_rect.x, src_rect.y, src_rect.width, src_rect.height),
+                dest_rect: (dest_rect.x, dest_rect.y, dest_rect.width, dest_rect.height),
+                orientation,
             };
 
             // Check if visibility changed and emit notification
