@@ -176,9 +176,6 @@ enum LayerCommands {
         /// Comma-separated list of surface IDs (first=bottommost, last=topmost)
         #[arg(value_delimiter = ',')]
         surface_ids: Vec<u32>,
-        /// Automatically commit changes
-        #[arg(long, default_value_t = false)]
-        auto_commit: bool,
     },
     /// Add a single surface to a layer as topmost
     AddSurface {
@@ -186,9 +183,6 @@ enum LayerCommands {
         layer_id: u32,
         /// Surface ID to add
         surface_id: u32,
-        /// Automatically commit changes
-        #[arg(long, default_value_t = false)]
-        auto_commit: bool,
     },
     /// Remove a surface from a layer
     RemoveSurface {
@@ -196,9 +190,6 @@ enum LayerCommands {
         layer_id: u32,
         /// Surface ID to remove
         surface_id: u32,
-        /// Automatically commit changes
-        #[arg(long, default_value_t = false)]
-        auto_commit: bool,
     },
     /// List surfaces on a layer
     GetSurfaces {
@@ -234,9 +225,6 @@ enum ScreenCommands {
         /// Comma-separated list of layer IDs
         #[arg(value_delimiter = ',')]
         layer_ids: Vec<u32>,
-        /// Automatically commit changes
-        #[arg(long, default_value_t = false)]
-        auto_commit: bool,
     },
     /// Remove a layer from a screen
     RemoveLayer {
@@ -244,9 +232,6 @@ enum ScreenCommands {
         name: String,
         /// Layer ID to remove
         layer_id: u32,
-        /// Automatically commit changes
-        #[arg(long, default_value_t = false)]
-        auto_commit: bool,
     },
 }
 
@@ -299,7 +284,7 @@ fn handle_surface_set_visibility(
     visible: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_surface_visibility(id, visible)?;
+    client.set_surface_visibility(id, visible, true)?;
     Ok(output::format_surface_visibility_success(id, visible))
 }
 
@@ -312,11 +297,11 @@ fn handle_surface_set_opacity(
     validate_opacity(opacity)?;
 
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_surface_opacity(id, opacity)?;
+    client.set_surface_opacity(id, opacity, true)?;
     Ok(output::format_surface_opacity_success(id, opacity))
 }
 
-/// Handle surface set-dest-rect command
+/// Handle surface set-source-rect command
 fn handle_surface_set_source_rect(
     socket_path: &str,
     id: u32,
@@ -326,7 +311,7 @@ fn handle_surface_set_source_rect(
     height: i32,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_surface_source_rectangle(id, x, y, width, height)?;
+    client.set_surface_source_rectangle(id, x, y, width, height, true)?;
     Ok(output::format_surface_source_rect_success(
         id, x, y, width, height,
     ))
@@ -341,7 +326,7 @@ fn handle_surface_set_dest_rect(
     height: i32,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_surface_destination_rectangle(id, x, y, width, height)?;
+    client.set_surface_destination_rectangle(id, x, y, width, height, true)?;
     Ok(output::format_surface_dest_rect_success(
         id, x, y, width, height,
     ))
@@ -354,7 +339,7 @@ fn handle_surface_set_z_order(
     z_order: i32,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_surface_z_order(id, z_order)?;
+    client.set_surface_z_order(id, z_order, true)?;
     Ok(output::format_surface_z_order_success(id, z_order))
 }
 
@@ -364,7 +349,7 @@ fn handle_surface_set_focus(
     id: u32,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_surface_focus(id)?;
+    client.set_surface_focus(id, true)?;
     Ok(output::format_surface_focus_success(id))
 }
 
@@ -407,7 +392,7 @@ fn handle_layer_set_source_rect(
     height: i32,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_layer_source_rectangle(id, x, y, width, height)?;
+    client.set_layer_source_rectangle(id, x, y, width, height, true)?;
     Ok(output::format_layer_source_rect_success(
         id, x, y, width, height,
     ))
@@ -423,7 +408,7 @@ fn handle_layer_set_dest_rect(
     height: i32,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_layer_destination_rectangle(id, x, y, width, height)?;
+    client.set_layer_destination_rectangle(id, x, y, width, height, true)?;
     Ok(output::format_layer_dest_rect_success(
         id, x, y, width, height,
     ))
@@ -436,7 +421,7 @@ fn handle_layer_set_visibility(
     visible: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_layer_visibility(id, visible)?;
+    client.set_layer_visibility(id, visible, true)?;
     Ok(output::format_layer_visibility_success(id, visible))
 }
 
@@ -449,7 +434,7 @@ fn handle_layer_set_opacity(
     validate_opacity(opacity)?;
 
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_layer_opacity(id, opacity)?;
+    client.set_layer_opacity(id, opacity, true)?;
     Ok(output::format_layer_opacity_success(id, opacity))
 }
 
@@ -458,14 +443,13 @@ fn handle_layer_set_surfaces(
     socket_path: &str,
     layer_id: u32,
     surface_ids: &[u32],
-    auto_commit: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.set_surfaces_on_layer(layer_id, surface_ids, auto_commit)?;
+    client.set_surfaces_on_layer(layer_id, surface_ids, true)?;
     Ok(output::format_layer_set_surfaces_success(
         layer_id,
         surface_ids,
-        auto_commit,
+        true,
     ))
 }
 
@@ -474,14 +458,11 @@ fn handle_layer_add_surface(
     socket_path: &str,
     layer_id: u32,
     surface_id: u32,
-    auto_commit: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.add_surface_to_layer(layer_id, surface_id, auto_commit)?;
+    client.add_surface_to_layer(layer_id, surface_id, true)?;
     Ok(output::format_layer_add_surface_success(
-        layer_id,
-        surface_id,
-        auto_commit,
+        layer_id, surface_id, true,
     ))
 }
 
@@ -490,14 +471,11 @@ fn handle_layer_remove_surface(
     socket_path: &str,
     layer_id: u32,
     surface_id: u32,
-    auto_commit: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.remove_surface_from_layer(layer_id, surface_id, auto_commit)?;
+    client.remove_surface_from_layer(layer_id, surface_id, true)?;
     Ok(output::format_layer_remove_surface_success(
-        layer_id,
-        surface_id,
-        auto_commit,
+        layer_id, surface_id, true,
     ))
 }
 
@@ -553,14 +531,11 @@ fn handle_screen_set_layers(
     socket_path: &str,
     name: &str,
     layer_ids: &[u32],
-    auto_commit: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.add_layers_to_screen(name, layer_ids, auto_commit)?;
+    client.add_layers_to_screen(name, layer_ids, true)?;
     Ok(output::format_screen_set_layers_success(
-        name,
-        layer_ids,
-        auto_commit,
+        name, layer_ids, true,
     ))
 }
 
@@ -569,14 +544,11 @@ fn handle_screen_remove_layer(
     socket_path: &str,
     name: &str,
     layer_id: u32,
-    auto_commit: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
-    client.remove_layer_from_screen(name, layer_id, auto_commit)?;
+    client.remove_layer_from_screen(name, layer_id, true)?;
     Ok(output::format_screen_remove_layer_success(
-        name,
-        layer_id,
-        auto_commit,
+        name, layer_id, true,
     ))
 }
 
@@ -648,18 +620,15 @@ fn main() {
             LayerCommands::SetSurfaces {
                 layer_id,
                 surface_ids,
-                auto_commit,
-            } => handle_layer_set_surfaces(&cli.socket, layer_id, &surface_ids, auto_commit),
+            } => handle_layer_set_surfaces(&cli.socket, layer_id, &surface_ids),
             LayerCommands::AddSurface {
                 layer_id,
                 surface_id,
-                auto_commit,
-            } => handle_layer_add_surface(&cli.socket, layer_id, surface_id, auto_commit),
+            } => handle_layer_add_surface(&cli.socket, layer_id, surface_id),
             LayerCommands::RemoveSurface {
                 layer_id,
                 surface_id,
-                auto_commit,
-            } => handle_layer_remove_surface(&cli.socket, layer_id, surface_id, auto_commit),
+            } => handle_layer_remove_surface(&cli.socket, layer_id, surface_id),
             LayerCommands::GetSurfaces { layer_id } => {
                 handle_layer_get_surfaces(&cli.socket, layer_id)
             }
@@ -673,16 +642,12 @@ fn main() {
             ScreenCommands::GetScreensForLayer { layer_id } => {
                 handle_screen_get_screens_for_layer(&cli.socket, layer_id)
             }
-            ScreenCommands::SetLayers {
-                name,
-                layer_ids,
-                auto_commit,
-            } => handle_screen_set_layers(&cli.socket, &name, &layer_ids, auto_commit),
-            ScreenCommands::RemoveLayer {
-                name,
-                layer_id,
-                auto_commit,
-            } => handle_screen_remove_layer(&cli.socket, &name, layer_id, auto_commit),
+            ScreenCommands::SetLayers { name, layer_ids } => {
+                handle_screen_set_layers(&cli.socket, &name, &layer_ids)
+            }
+            ScreenCommands::RemoveLayer { name, layer_id } => {
+                handle_screen_remove_layer(&cli.socket, &name, layer_id)
+            }
         },
         Commands::Commit => handle_commit(&cli.socket),
     };

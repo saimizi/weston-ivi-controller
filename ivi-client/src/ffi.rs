@@ -367,7 +367,7 @@ pub unsafe extern "C" fn ivi_set_surface_source_rectangle(
 
     let client = &mut *client;
 
-    match client.set_surface_source_rectangle(id, x, y, width, height) {
+    match client.set_surface_source_rectangle(id, x, y, width, height, true) {
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
@@ -399,7 +399,7 @@ pub unsafe extern "C" fn ivi_set_surface_destination_rectangle(
 
     let client = &mut *client;
 
-    match client.set_surface_destination_rectangle(id, x, y, width, height) {
+    match client.set_surface_destination_rectangle(id, x, y, width, height, true) {
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
@@ -428,7 +428,7 @@ pub unsafe extern "C" fn ivi_set_surface_visibility(
 
     let client = &mut *client;
 
-    match client.set_surface_visibility(id, visible) {
+    match client.set_surface_visibility(id, visible, true) {
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
@@ -457,7 +457,7 @@ pub unsafe extern "C" fn ivi_set_surface_opacity(
 
     let client = &mut *client;
 
-    match client.set_surface_opacity(id, opacity) {
+    match client.set_surface_opacity(id, opacity, true) {
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
@@ -486,7 +486,7 @@ pub unsafe extern "C" fn ivi_set_surface_z_order(
 
     let client = &mut *client;
 
-    match client.set_surface_z_order(id, z_order) {
+    match client.set_surface_z_order(id, z_order, true) {
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
@@ -514,7 +514,7 @@ pub unsafe extern "C" fn ivi_set_surface_focus(
 
     let client = &mut *client;
 
-    match client.set_surface_focus(id) {
+    match client.set_surface_focus(id, true) {
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
@@ -628,7 +628,7 @@ pub unsafe extern "C" fn ivi_set_layer_visibility(
 
     let client = &mut *client;
 
-    match client.set_layer_visibility(id, visible) {
+    match client.set_layer_visibility(id, visible, true) {
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
@@ -657,7 +657,7 @@ pub unsafe extern "C" fn ivi_set_layer_opacity(
 
     let client = &mut *client;
 
-    match client.set_layer_opacity(id, opacity) {
+    match client.set_layer_opacity(id, opacity, true) {
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
@@ -689,7 +689,7 @@ pub unsafe extern "C" fn ivi_set_layer_source_rectangle(
 
     let client = &mut *client;
 
-    match client.set_layer_source_rectangle(id, x, y, width, height) {
+    match client.set_layer_source_rectangle(id, x, y, width, height, true) {
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);
@@ -721,7 +721,7 @@ pub unsafe extern "C" fn ivi_set_layer_destination_rectangle(
 
     let client = &mut *client;
 
-    match client.set_layer_destination_rectangle(id, x, y, width, height) {
+    match client.set_layer_destination_rectangle(id, x, y, width, height, true) {
         Ok(_) => IviErrorCode::Ok,
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);

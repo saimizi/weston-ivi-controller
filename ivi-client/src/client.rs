@@ -248,6 +248,7 @@ impl IviClient {
         y: i32,
         width: i32,
         height: i32,
+        auto_commit: bool,
     ) -> Result<()> {
         use serde_json::json;
 
@@ -255,6 +256,9 @@ impl IviClient {
             "set_surface_source_rectangle",
             json!({ "id": id, "x": x, "y": y, "width": width, "height": height }),
         )?;
+        if auto_commit {
+            self.commit()?;
+        }
         Ok(())
     }
 
@@ -292,6 +296,7 @@ impl IviClient {
         y: i32,
         width: i32,
         height: i32,
+        auto_commit: bool,
     ) -> Result<()> {
         use serde_json::json;
 
@@ -299,6 +304,9 @@ impl IviClient {
             "set_surface_destination_rectangle",
             json!({ "id": id, "x": x, "y": y, "width": width, "height": height }),
         )?;
+        if auto_commit {
+            self.commit()?;
+        }
         Ok(())
     }
 
@@ -326,13 +334,21 @@ impl IviClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn set_surface_visibility(&mut self, id: u32, visible: bool) -> Result<()> {
+    pub fn set_surface_visibility(
+        &mut self,
+        id: u32,
+        visible: bool,
+        auto_commit: bool,
+    ) -> Result<()> {
         use serde_json::json;
 
         self.send_request(
             "set_surface_visibility",
             json!({ "id": id, "visible": visible }),
         )?;
+        if auto_commit {
+            self.commit()?;
+        }
         Ok(())
     }
 
@@ -361,13 +377,16 @@ impl IviClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn set_surface_opacity(&mut self, id: u32, opacity: f32) -> Result<()> {
+    pub fn set_surface_opacity(&mut self, id: u32, opacity: f32, auto_commit: bool) -> Result<()> {
         use serde_json::json;
 
         self.send_request(
             "set_surface_opacity",
             json!({ "id": id, "opacity": opacity }),
         )?;
+        if auto_commit {
+            self.commit()?;
+        }
         Ok(())
     }
 
@@ -395,13 +414,16 @@ impl IviClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn set_surface_z_order(&mut self, id: u32, z_order: i32) -> Result<()> {
+    pub fn set_surface_z_order(&mut self, id: u32, z_order: i32, auto_commit: bool) -> Result<()> {
         use serde_json::json;
 
         self.send_request(
             "set_surface_z_order",
             json!({ "id": id, "z_order": z_order }),
         )?;
+        if auto_commit {
+            self.commit()?;
+        }
         Ok(())
     }
 
@@ -428,10 +450,13 @@ impl IviClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn set_surface_focus(&mut self, id: u32) -> Result<()> {
+    pub fn set_surface_focus(&mut self, id: u32, auto_commit: bool) -> Result<()> {
         use serde_json::json;
 
         self.send_request("set_surface_focus", json!({ "id": id }))?;
+        if auto_commit {
+            self.commit()?;
+        }
         Ok(())
     }
 
@@ -607,6 +632,7 @@ impl IviClient {
         y: i32,
         width: i32,
         height: i32,
+        auto_commit: bool,
     ) -> Result<()> {
         use serde_json::json;
 
@@ -614,6 +640,9 @@ impl IviClient {
             "set_layer_source_rectangle",
             json!({ "id": id, "x": x, "y": y, "width": width, "height": height }),
         )?;
+        if auto_commit {
+            self.commit()?;
+        }
         Ok(())
     }
 
@@ -651,6 +680,7 @@ impl IviClient {
         y: i32,
         width: i32,
         height: i32,
+        auto_commit: bool,
     ) -> Result<()> {
         use serde_json::json;
 
@@ -658,6 +688,9 @@ impl IviClient {
             "set_layer_destination_rectangle",
             json!({ "id": id, "x": x, "y": y, "width": width, "height": height }),
         )?;
+        if auto_commit {
+            self.commit()?;
+        }
         Ok(())
     }
 
@@ -685,13 +718,21 @@ impl IviClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn set_layer_visibility(&mut self, id: u32, visible: bool) -> Result<()> {
+    pub fn set_layer_visibility(
+        &mut self,
+        id: u32,
+        visible: bool,
+        auto_commit: bool,
+    ) -> Result<()> {
         use serde_json::json;
 
         self.send_request(
             "set_layer_visibility",
             json!({ "id": id, "visible": visible }),
         )?;
+        if auto_commit {
+            self.commit()?;
+        }
         Ok(())
     }
 
@@ -720,10 +761,13 @@ impl IviClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn set_layer_opacity(&mut self, id: u32, opacity: f32) -> Result<()> {
+    pub fn set_layer_opacity(&mut self, id: u32, opacity: f32, auto_commit: bool) -> Result<()> {
         use serde_json::json;
 
         self.send_request("set_layer_opacity", json!({ "id": id, "opacity": opacity }))?;
+        if auto_commit {
+            self.commit()?;
+        }
         Ok(())
     }
 
