@@ -92,22 +92,22 @@ fn demonstrate_surface_operations(client: &mut IviClient) -> Result<()> {
 
         // Set destination rectangle (position and size on screen)
         println!("  Setting destination rectangle to (100, 100, 800x600)...");
-        client.set_surface_destination_rectangle(surface_id, 100, 100, 800, 600)?;
+        client.set_surface_destination_rectangle(surface_id, 100, 100, 800, 600, false)?;
         println!("    ✓ Destination rectangle updated");
 
         // Set visibility
         println!("  Setting visibility to true...");
-        client.set_surface_visibility(surface_id, true)?;
+        client.set_surface_visibility(surface_id, true, false)?;
         println!("    ✓ Visibility updated");
 
         // Set opacity
         println!("  Setting opacity to 0.8...");
-        client.set_surface_opacity(surface_id, 0.8)?;
+        client.set_surface_opacity(surface_id, 0.8, false)?;
         println!("    ✓ Opacity updated");
 
         // Set z-order
         println!("  Setting z-order to 10...");
-        client.set_surface_z_order(surface_id, 10)?;
+        client.set_surface_z_order(surface_id, 10, false)?;
         println!("    ✓ Z-order updated");
 
         // Commit all changes atomically
@@ -163,12 +163,12 @@ fn demonstrate_layer_operations(client: &mut IviClient) -> Result<()> {
 
         // Set visibility
         println!("  Setting visibility to true...");
-        client.set_layer_visibility(layer_id, true)?;
+        client.set_layer_visibility(layer_id, true, false)?;
         println!("    ✓ Visibility updated");
 
         // Set opacity
         println!("  Setting opacity to 0.9...");
-        client.set_layer_opacity(layer_id, 0.9)?;
+        client.set_layer_opacity(layer_id, 0.9, false)?;
         println!("    ✓ Opacity updated");
 
         // Commit changes

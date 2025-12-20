@@ -120,14 +120,14 @@ pub enum IviOrientation {
 impl Display for IviOrientation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            IviOrientation::Normal => write!(f, "Normal"),
-            IviOrientation::Rotate90 => write!(f, "Rotate90"),
-            IviOrientation::Rotate180 => write!(f, "Rotate180"),
-            IviOrientation::Rotate270 => write!(f, "Rotate270"),
+            IviOrientation::Normal => write!(f, "0 degrees"),
+            IviOrientation::Rotate90 => write!(f, "90 degrees"),
+            IviOrientation::Rotate180 => write!(f, "180 degrees"),
+            IviOrientation::Rotate270 => write!(f, "270 degrees"),
             IviOrientation::Flipped => write!(f, "Flipped"),
-            IviOrientation::Flipped90 => write!(f, "Flipped90"),
-            IviOrientation::Flipped180 => write!(f, "Flipped180"),
-            IviOrientation::Flipped270 => write!(f, "Flipped270"),
+            IviOrientation::Flipped90 => write!(f, "Flipped 90 degrees"),
+            IviOrientation::Flipped180 => write!(f, "Flipped 180 degrees"),
+            IviOrientation::Flipped270 => write!(f, "Flipped 270 degrees"),
         }
     }
 }

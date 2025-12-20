@@ -1532,17 +1532,6 @@ mod tests {
                 handler: Mutex::new(None),
             }
         }
-
-        fn get_last_message(&self) -> Vec<u8> {
-            self.last_message.lock().unwrap().clone()
-        }
-
-        fn simulate_message(&self, client_id: ClientId, data: &[u8]) {
-            let handler = self.handler.lock().unwrap();
-            if let Some(h) = handler.as_ref() {
-                h.handle_message(client_id, data);
-            }
-        }
     }
 
     impl Transport for MockTransport {
@@ -1585,7 +1574,7 @@ mod tests {
     // Helper to create a mock state manager for testing
     fn create_mock_state_manager() -> Arc<Mutex<StateManager>> {
         // Create a mock IVI API with a null pointer (safe for testing as we won't call IVI functions)
-        let ivi_api = unsafe {
+        let ivi_api = {
             // For testing, we create a dummy API pointer
             // This is safe because our tests don't actually call IVI functions
             Arc::new(IviLayoutApi::from_raw(1 as *const _).unwrap())

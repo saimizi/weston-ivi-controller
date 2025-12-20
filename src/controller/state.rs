@@ -685,13 +685,13 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     fn make_state_manager() -> StateManager {
-        let ivi_api = unsafe { Arc::new(IviLayoutApi::from_raw(1 as *const _).unwrap()) };
+        let ivi_api = { Arc::new(IviLayoutApi::from_raw(1 as *const _).unwrap()) };
         StateManager::new(ivi_api)
     }
 
     #[test]
     fn emits_visibility_opacity_orientation_and_geometry_changes() {
-        let mut sm = make_state_manager();
+        let sm = make_state_manager();
 
         // Collect notifications
         let seen: Arc<Mutex<Vec<NotificationType>>> = Arc::new(Mutex::new(Vec::new()));
@@ -802,7 +802,7 @@ mod tests {
 
     #[test]
     fn emits_only_orientation_change_when_only_orientation_differs() {
-        let mut sm = make_state_manager();
+        let sm = make_state_manager();
 
         let seen: Arc<Mutex<Vec<NotificationType>>> = Arc::new(Mutex::new(Vec::new()));
         let nm_arc = sm.notification_manager();

@@ -195,6 +195,19 @@ mod tests {
             id: 2000,
             visibility: true,
             opacity: 1.0,
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            orientation: IviOrientation::Normal,
         }];
         assert_eq!(format_layer_list(&layers), "Layer IDs: 2000");
     }
@@ -206,16 +219,55 @@ mod tests {
                 id: 2000,
                 visibility: true,
                 opacity: 1.0,
+                src_rect: Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                },
+                dest_rect: Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                },
+                orientation: IviOrientation::Normal,
             },
             IviLayer {
                 id: 2001,
                 visibility: false,
                 opacity: 0.5,
+                src_rect: Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                },
+                dest_rect: Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                },
+                orientation: IviOrientation::Normal,
             },
             IviLayer {
                 id: 2002,
                 visibility: true,
                 opacity: 0.75,
+                src_rect: Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                },
+                dest_rect: Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                },
+                orientation: IviOrientation::Normal,
             },
         ];
         assert_eq!(format_layer_list(&layers), "Layer IDs: 2000, 2001, 2002");
@@ -402,6 +454,19 @@ mod properties_tests {
             id: 2000,
             visibility: true,
             opacity: 1.0,
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            orientation: IviOrientation::Normal,
         };
 
         let output = format_layer_properties(&layer);
@@ -416,6 +481,19 @@ mod properties_tests {
             id: 2001,
             visibility: false,
             opacity: 0.75,
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            orientation: IviOrientation::Normal,
         };
 
         let output = format_layer_properties(&layer);
@@ -430,6 +508,19 @@ mod properties_tests {
             id: 2002,
             visibility: true,
             opacity: 0.987654,
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            orientation: IviOrientation::Normal,
         };
 
         let output = format_layer_properties(&layer);

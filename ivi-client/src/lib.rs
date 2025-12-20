@@ -35,8 +35,8 @@
 //!     
 //!     // Modify a surface
 //!     if let Some(surface) = surfaces.first() {
-//!         client.set_surface_visibility(surface.id, true)?;
-//!         client.set_surface_opacity(surface.id, 0.8)?;
+//!         client.set_surface_visibility(surface.id, true, false)?;
+//!         client.set_surface_opacity(surface.id, 0.8, false)?;
 //!         client.commit()?;
 //!     }
 //!     

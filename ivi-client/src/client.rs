@@ -237,7 +237,7 @@ impl IviClient {
     ///
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_surface_source_rectangle(1000, 0, 0, 1920, 1080)?;
+    /// client.set_surface_source_rectangle(1000, 0, 0, 1920, 1080, false)?;
     /// # Ok(())
     /// # }
     /// ```
@@ -285,7 +285,7 @@ impl IviClient {
     ///
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_surface_destination_rectangle(1000, 100, 200, 1280, 720)?;
+    /// client.set_surface_destination_rectangle(1000, 100, 200, 1280, 720, false)?;
     /// # Ok(())
     /// # }
     /// ```
@@ -330,7 +330,7 @@ impl IviClient {
     ///
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_surface_visibility(1000, true)?;
+    /// client.set_surface_visibility(1000, true, false)?;
     /// # Ok(())
     /// # }
     /// ```
@@ -373,7 +373,7 @@ impl IviClient {
     ///
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_surface_opacity(1000, 0.75)?;
+    /// client.set_surface_opacity(1000, 0.75, false)?;
     /// # Ok(())
     /// # }
     /// ```
@@ -410,7 +410,7 @@ impl IviClient {
     ///
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_surface_z_order(1000, 10)?;
+    /// client.set_surface_z_order(1000, 10, false)?;
     /// # Ok(())
     /// # }
     /// ```
@@ -446,7 +446,7 @@ impl IviClient {
     ///
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_surface_focus(1000)?;
+    /// client.set_surface_focus(1000, false)?;
     /// # Ok(())
     /// # }
     /// ```
@@ -652,7 +652,7 @@ impl IviClient {
     ///
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_layer_source_rectangle(2000, 0, 0, 1920, 1080)?;
+    /// client.set_layer_source_rectangle(2000, 0, 0, 1920, 1080, false)?;
     /// # Ok(())
     /// # }
     /// ```
@@ -700,7 +700,7 @@ impl IviClient {
     ///
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_layer_destination_rectangle(2000, 0, 0, 1920, 1080)?;
+    /// client.set_layer_destination_rectangle(2000, 0, 0, 1920, 1080, false)?;
     /// # Ok(())
     /// # }
     /// ```
@@ -745,7 +745,7 @@ impl IviClient {
     ///
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_layer_visibility(2000, true)?;
+    /// client.set_layer_visibility(2000, true, false)?;
     /// # Ok(())
     /// # }
     /// ```
@@ -788,7 +788,7 @@ impl IviClient {
     ///
     /// # fn main() -> ivi_client::Result<()> {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// client.set_layer_opacity(2000, 0.75)?;
+    /// client.set_layer_opacity(2000, 0.75, false)?;
     /// # Ok(())
     /// # }
     /// ```
@@ -1117,8 +1117,8 @@ impl IviClient {
     /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
     ///
     /// // Make multiple changes
-    /// client.set_surface_destination_rectangle(1000, 100, 200, 1920, 1080)?;
-    /// client.set_surface_visibility(1000, true)?;
+    /// client.set_surface_destination_rectangle(1000, 100, 200, 1920, 1080, false)?;
+    /// client.set_surface_visibility(1000, true, false)?;
     ///
     /// // Commit all changes atomically
     /// client.commit()?;
