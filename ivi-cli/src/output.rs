@@ -3,7 +3,7 @@
 //! This module provides functions to format CLI output in a consistent,
 //! human-readable manner.
 
-use ivi_client::{IviLayer, IviSurface};
+use ivi_client::{IviLayer, IviScreen, IviSurface};
 
 /// Format a list of surface IDs as a comma-separated string
 ///
@@ -719,6 +719,93 @@ pub fn format_layer_remove_surface_success(
 /// Format a success message for commit operation
 pub fn format_commit_success() -> String {
     format_success("Changes committed")
+}
+
+/// Format hierarchical scene showing screens -> layers -> surfaces
+///
+/// # Arguments
+/// * `hierarchy` - Vector of (screen, layers) where layers is Vec<(layer, surfaces)>
+///
+/// # Returns
+/// A formatted string with tree structure and indentation
+pub fn format_hierarchical_scene(
+    hierarchy: &[(IviScreen, Vec<(IviLayer, Vec<IviSurface>)>)],
+) -> String {
+    if hierarchy.is_empty() {
+        return "No screens available".to_string();
+    }
+
+    let mut output = String::new();
+
+    for (screen_idx, (screen, layers)) in hierarchy.iter().enumerate() {
+        // Screen header
+        output.push_str(&format!("Screen: {}\n", screen.name));
+
+        // Screen properties (2-space indent)
+        output.push_str(&format!(
+            "  Resolution: {}x{}\n",
+            screen.width, screen.height
+        ));
+        output.push_str(&format!("  Position: ({:.0}, {:.0})\n", screen.x, screen.y));
+        output.push_str(&format!("  Transform: {}\n", screen.transform));
+        output.push_str(&format!("  Enabled: {}\n", screen.enabled));
+        output.push_str(&format!("  Scale: {}\n", screen.scale));
+
+        if layers.is_empty() {
+            output.push_str("  No layers assigned\n");
+        } else {
+            for (layer_idx, (layer, surfaces)) in layers.iter().enumerate() {
+                output.push('\n');
+
+                // Layer header (2-space indent)
+                output.push_str(&format!("  Layer {}:\n", layer.id));
+
+                // Layer properties (4-space indent)
+                output.push_str(&format!("    SrcRect: {}\n", layer.src_rect));
+                output.push_str(&format!("    DestRect: {}\n", layer.dest_rect));
+                output.push_str(&format!("    Visibility: {}\n", layer.visibility));
+                output.push_str(&format!("    Opacity: {:.2}\n", layer.opacity));
+                output.push_str(&format!("    Orientation: {}\n", layer.orientation));
+
+                if surfaces.is_empty() {
+                    output.push_str("    No surfaces assigned\n");
+                } else {
+                    for (surface_idx, surface) in surfaces.iter().enumerate() {
+                        output.push('\n');
+
+                        // Surface header (4-space indent)
+                        output.push_str(&format!("    Surface {}:\n", surface.id));
+
+                        // Surface properties (6-space indent)
+                        output.push_str(&format!("      OrigSize: {}\n", surface.orig_size));
+                        output.push_str(&format!("      SrcRect: {}\n", surface.src_rect));
+                        output.push_str(&format!("      DestRect: {}\n", surface.dest_rect));
+                        output.push_str(&format!("      Visibility: {}\n", surface.visibility));
+                        output.push_str(&format!("      Opacity: {:.2}\n", surface.opacity));
+                        output.push_str(&format!("      Orientation: {}\n", surface.orientation));
+                        output.push_str(&format!("      Z-Order: {}\n", surface.z_order));
+
+                        // Don't add extra newline after last surface in layer
+                        if surface_idx < surfaces.len() - 1 {
+                            output.push('\n');
+                        }
+                    }
+                }
+
+                // Don't add extra newline after last layer in screen
+                if layer_idx < layers.len() - 1 {
+                    output.push('\n');
+                }
+            }
+        }
+
+        // Add spacing between screens (but not after the last one)
+        if screen_idx < hierarchy.len() - 1 {
+            output.push_str("\n\n");
+        }
+    }
+
+    output
 }
 
 #[cfg(test)]

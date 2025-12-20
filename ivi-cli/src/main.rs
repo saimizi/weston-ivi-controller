@@ -40,6 +40,8 @@ enum Commands {
         #[command(subcommand)]
         command: ScreenCommands,
     },
+    /// Display complete scene hierarchy
+    Scene,
     /// Commit pending changes atomically
     Commit,
 }
@@ -552,6 +554,38 @@ fn handle_screen_remove_layer(
     ))
 }
 
+/// Handle hierarchical scene command
+fn handle_scene(socket_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+
+    // Get all screens
+    let screens = client.list_screens()?;
+    let mut hierarchy = Vec::new();
+
+    // Build hierarchical structure: screens -> layers -> surfaces
+    for screen in screens {
+        let layer_ids = client.get_screen_layers(&screen.name)?;
+        let mut layers_data = Vec::new();
+
+        for layer_id in layer_ids {
+            let layer = client.get_layer(layer_id)?;
+            let surface_ids = client.get_layer_surfaces(layer_id)?;
+            let mut surfaces_data = Vec::new();
+
+            for surface_id in surface_ids {
+                let surface = client.get_surface(surface_id)?;
+                surfaces_data.push(surface);
+            }
+
+            layers_data.push((layer, surfaces_data));
+        }
+
+        hierarchy.push((screen, layers_data));
+    }
+
+    Ok(output::format_hierarchical_scene(&hierarchy))
+}
+
 /// Handle commit command
 fn handle_commit(socket_path: &str) -> Result<String, Box<dyn std::error::Error>> {
     let mut client = ivi_client::IviClient::connect(socket_path)?;
@@ -647,6 +681,7 @@ fn main() {
                 handle_screen_remove_layer(&cli.socket, &name, layer_id)
             }
         },
+        Commands::Scene => handle_scene(&cli.socket),
         Commands::Commit => handle_commit(&cli.socket),
     };
 
