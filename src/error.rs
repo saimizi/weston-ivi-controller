@@ -3,7 +3,7 @@
 //! This module defines all error types used throughout the controller,
 //! providing a unified error handling approach.
 
-use crate::controller::ValidationError;
+use crate::controller::{IdAssignmentError, ValidationError};
 use crate::rpc::RpcError;
 use thiserror::Error;
 
@@ -45,6 +45,10 @@ pub enum ControllerError {
     /// Validation error
     #[error("Validation error: {0}")]
     ValidationError(#[from] ValidationError),
+
+    /// ID assignment error
+    #[error("ID assignment error: {0}")]
+    IdAssignmentError(#[from] IdAssignmentError),
 
     /// RPC error
     #[error("RPC error: {0}")]
@@ -180,6 +184,14 @@ impl ControllerError {
                 RpcError::internal_error(format!("State error: {}", message))
             }
             Self::ValidationError(e) => RpcError::invalid_params(e.to_string()),
+            Self::IdAssignmentError(e) => match e {
+                IdAssignmentError::InvalidConfiguration { .. } => {
+                    RpcError::invalid_params(e.to_string())
+                }
+                IdAssignmentError::NoAvailableIds { .. } => RpcError::internal_error(e.to_string()),
+                IdAssignmentError::SurfaceNotFound { id } => RpcError::surface_not_found(*id),
+                _ => RpcError::internal_error(e.to_string()),
+            },
             Self::RpcError(e) => e.clone(),
             Self::InitializationError { message } => {
                 RpcError::internal_error(format!("Initialization error: {}", message))
@@ -201,6 +213,23 @@ impl ControllerError {
             Self::SerializationError { .. } => -32700,
             Self::StateError { .. } => -32003,
             Self::ValidationError(_) => -32602,
+            Self::IdAssignmentError(e) => match e {
+                IdAssignmentError::InvalidConfiguration { .. } => -32602,
+                IdAssignmentError::NoAvailableIds { .. } => -32006,
+                IdAssignmentError::SurfaceNotFound { .. } => -32000,
+                IdAssignmentError::RegistryError { .. } => -32007,
+                IdAssignmentError::IviApiError { .. } => -32001,
+                IdAssignmentError::SyncError { .. } => -32008,
+                IdAssignmentError::TimeoutError { .. } => -32009,
+                IdAssignmentError::DeadlockError { .. } => -32010,
+                IdAssignmentError::ConcurrencyLimitExceeded { .. } => -32011,
+                IdAssignmentError::InvalidId { .. } => -32602,
+                IdAssignmentError::RegistryCorruption { .. } => -32012,
+                IdAssignmentError::IdExhaustionFallbackFailed { .. } => -32013,
+                IdAssignmentError::RecoveryFailed { .. } => -32014,
+                IdAssignmentError::EmergencyAllocationFailed { .. } => -32015,
+                IdAssignmentError::DiagnosticFailed { .. } => -32016,
+            },
             Self::RpcError(e) => e.code,
             Self::InitializationError { .. } => -32004,
             Self::PluginError { .. } => -32005,

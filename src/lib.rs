@@ -46,7 +46,28 @@
 //!
 //! The plugin accepts the following command-line arguments:
 //!
+//! ## Transport Configuration
 //! - `--socket-path=<path>`: Path to the UNIX domain socket (default: /tmp/weston-ivi-controller.sock)
+//! - `--max-connections=<num>`: Maximum number of client connections (default: 10)
+//!
+//! ## ID Assignment Configuration
+//! - `--id-start=<id>`: Starting ID for auto-assignment range (default: 0x10000000, supports hex with 0x prefix)
+//! - `--id-max=<id>`: Maximum ID for auto-assignment range (default: 0xFFFFFFFE, supports hex with 0x prefix)
+//! - `--id-invalid=<id>`: Invalid ID that triggers assignment (default: 0xFFFFFFFF, supports hex with 0x prefix)
+//! - `--id-lock-timeout=<ms>`: Lock acquisition timeout in milliseconds (default: 5000)
+//! - `--id-max-concurrent=<num>`: Maximum concurrent assignments (default: 10)
+//! - `--id-assignment-timeout=<ms>`: Assignment operation timeout in milliseconds (default: 10000)
+//!
+//! ## Environment Variables
+//! Configuration can also be set via environment variables (overridden by command-line args):
+//! - `WESTON_IVI_SOCKET_PATH`: Socket path
+//! - `WESTON_IVI_MAX_CONNECTIONS`: Maximum connections
+//! - `WESTON_IVI_ID_START`: ID assignment start ID
+//! - `WESTON_IVI_ID_MAX`: ID assignment max ID
+//! - `WESTON_IVI_ID_INVALID`: Invalid ID value
+//! - `WESTON_IVI_ID_LOCK_TIMEOUT`: Lock timeout in milliseconds
+//! - `WESTON_IVI_ID_MAX_CONCURRENT`: Maximum concurrent assignments
+//! - `WESTON_IVI_ID_ASSIGNMENT_TIMEOUT`: Assignment timeout in milliseconds
 //!
 //! # Safety
 //!
@@ -65,6 +86,7 @@ pub use error::{ControllerError, ControllerResult};
 #[allow(unused)]
 use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter, LogTimeFormat};
 
+use std::env;
 use std::ffi::CStr;
 use std::panic;
 use std::path::PathBuf;
@@ -74,9 +96,72 @@ use libc::{c_char, c_int, c_void};
 
 use crate::controller::notifications::NotificationType;
 use crate::ffi::bindings::ivi_layout_api::IviLayoutApi;
-use controller::{EventContext, EventListeners, StateManager};
+use controller::{
+    EventContext, EventListeners, IdAssignmentConfig, IdAssignmentManager, StateManager,
+};
 use rpc::{NotificationBridge, RpcHandler};
 use transport::{unix_socket::UnixSocketConfig, UnixSocketTransport};
+
+/// Plugin configuration structure
+///
+/// This struct holds all configuration parameters for the plugin,
+/// including socket configuration and ID assignment settings.
+#[derive(Debug, Clone)]
+pub struct PluginConfig {
+    /// Path to the UNIX domain socket
+    pub socket_path: PathBuf,
+
+    /// Maximum number of client connections
+    pub max_connections: usize,
+
+    /// ID assignment configuration
+    pub id_assignment: IdAssignmentConfig,
+}
+
+impl Default for PluginConfig {
+    fn default() -> Self {
+        Self {
+            socket_path: PathBuf::from("/tmp/weston-ivi-controller.sock"),
+            max_connections: 10,
+            id_assignment: IdAssignmentConfig::default(),
+        }
+    }
+}
+
+impl PluginConfig {
+    /// Validate the plugin configuration
+    ///
+    /// # Returns
+    /// * `Ok(())` - Configuration is valid
+    /// * `Err(String)` - Configuration is invalid with error message
+    pub fn validate(&self) -> Result<(), String> {
+        // Validate socket path
+        if let Some(parent) = self.socket_path.parent() {
+            if !parent.exists() {
+                return Err(format!(
+                    "Socket directory does not exist: {}",
+                    parent.display()
+                ));
+            }
+        }
+
+        // Validate max connections
+        if self.max_connections == 0 {
+            return Err("max_connections must be greater than 0".to_string());
+        }
+
+        if self.max_connections > 1000 {
+            return Err("max_connections should not exceed 1000".to_string());
+        }
+
+        // Validate ID assignment configuration
+        self.id_assignment
+            .validate()
+            .map_err(|e| format!("ID assignment configuration error: {}", e))?;
+
+        Ok(())
+    }
+}
 
 /// Plugin state that persists for the lifetime of the plugin
 struct PluginState {
@@ -84,9 +169,15 @@ struct PluginState {
     #[allow(dead_code)]
     state_manager: Arc<Mutex<StateManager>>,
     rpc_handler: Arc<RpcHandler>,
+    // ID assignment manager for automatic surface ID assignment
+    #[allow(dead_code)]
+    id_assignment_manager: Arc<IdAssignmentManager>,
     // Kept alive to maintain event listener registrations with Weston
     #[allow(dead_code)]
     event_listeners: Option<EventListeners>,
+    // Plugin configuration for cleanup reference
+    #[allow(dead_code)]
+    config: PluginConfig,
 }
 
 // Safety: PluginState is used in a single-threaded Weston plugin context.
@@ -114,6 +205,37 @@ pub unsafe extern "C" fn compositor_destroy_handler(
     let state = PLUGIN_STATE.lock().unwrap().take();
 
     if let Some(state) = state {
+        // Request shutdown of ID assignment system
+        jinfo!("Requesting shutdown of ID assignment system");
+        state.id_assignment_manager.request_shutdown();
+
+        // Wait for concurrent assignments to complete (with timeout)
+        if let Err(e) = state
+            .id_assignment_manager
+            .wait_for_completion(std::time::Duration::from_millis(5000))
+        {
+            jwarn!(
+                "Timeout waiting for ID assignment completion during shutdown: {:?}",
+                e
+            );
+        } else {
+            jinfo!("All ID assignment operations completed successfully");
+        }
+
+        // Get final statistics before cleanup
+        if let Ok(stats) = state.id_assignment_manager.get_stats() {
+            jinfo!(
+                "ID assignment final statistics: total_assignments={}, wraparounds={}, conflicts_resolved={}, active_auto_assigned={}, timeout_errors={}, deadlock_errors={}, concurrency_limit_errors={}",
+                stats.total_assignments,
+                stats.wraparounds,
+                stats.conflicts_resolved,
+                stats.active_auto_assigned,
+                stats.timeout_errors,
+                stats.deadlock_errors,
+                stats.concurrency_limit_errors
+            );
+        }
+
         // Stop the transport
         if let Err(e) = state.rpc_handler.stop_transport() {
             jerror!("Error stopping transport: {:?}", e);
@@ -121,10 +243,11 @@ pub unsafe extern "C" fn compositor_destroy_handler(
             jinfo!("Transport stopped");
         }
 
-        // Event listeners, state manager, and RPC handler will be cleaned up
-        // automatically when state is dropped
+        // Event listeners, state manager, ID assignment manager, and RPC handler
+        // will be cleaned up automatically when state is dropped
         drop(state);
         jinfo!("Event listeners unregistered");
+        jinfo!("ID assignment manager cleaned up");
         jinfo!("Plugin state cleaned up");
     }
 
@@ -235,11 +358,38 @@ unsafe fn plugin_init_impl(
 ) -> Result<(PluginState, *mut ffi::weston_compositor), String> {
     jinfo!("Weston IVI Controller plugin initializing...");
 
-    // Parse command-line arguments
-    let socket_path = parse_socket_path(argc, argv)
-        .unwrap_or_else(|| PathBuf::from("/tmp/weston-ivi-controller.sock"));
+    // Parse command-line arguments and environment variables
+    let config = parse_plugin_config(argc, argv);
 
-    jinfo!("Using socket path: {:?}", socket_path);
+    // Validate configuration
+    if let Err(e) = config.validate() {
+        jerror!("Invalid plugin configuration: {}", e);
+        return Err(format!("Invalid plugin configuration: {}", e));
+    }
+
+    jinfo!("Using socket path: {:?}", config.socket_path);
+    jinfo!("Max connections: {}", config.max_connections);
+    jinfo!(
+        "ID assignment range: {:#x} - {:#x}",
+        config.id_assignment.start_id,
+        config.id_assignment.max_id
+    );
+    jinfo!(
+        "ID assignment invalid ID: {:#x}",
+        config.id_assignment.invalid_id
+    );
+    jinfo!(
+        "ID assignment lock timeout: {}ms",
+        config.id_assignment.lock_timeout_ms
+    );
+    jinfo!(
+        "ID assignment max concurrent: {}",
+        config.id_assignment.max_concurrent_assignments
+    );
+    jinfo!(
+        "ID assignment operation timeout: {}ms",
+        config.id_assignment.assignment_timeout_ms
+    );
 
     // Retrieve the IVI layout API from Weston compositor
     let ivi_api = Arc::new(
@@ -266,8 +416,8 @@ unsafe fn plugin_init_impl(
 
     // Create and register UNIX socket transport
     let transport_config = UnixSocketConfig {
-        socket_path,
-        max_connections: 10,
+        socket_path: config.socket_path.clone(),
+        max_connections: config.max_connections,
     };
 
     let transport = Box::new(UnixSocketTransport::new(transport_config));
@@ -279,10 +429,19 @@ unsafe fn plugin_init_impl(
 
     jinfo!("Transport registered");
 
+    // Create ID assignment manager with parsed configuration
+    let id_assignment_manager = Arc::new(
+        IdAssignmentManager::new(config.id_assignment.clone(), Arc::clone(&ivi_api))
+            .map_err(|e| format!("Failed to create ID assignment manager: {}", e))?,
+    );
+
+    jinfo!("ID assignment manager created");
+
     // Register IVI event listeners
     let event_context = Arc::new(EventContext::new(
         Arc::clone(&state_manager),
         Arc::clone(&ivi_api),
+        Arc::clone(&id_assignment_manager),
     ));
 
     let event_listeners = Arc::clone(&event_context)
@@ -376,43 +535,252 @@ unsafe fn plugin_init_impl(
         PluginState {
             state_manager,
             rpc_handler,
+            id_assignment_manager,
             event_listeners: Some(event_listeners),
+            config,
         },
         compositor, // Return compositor pointer for destroy listener registration
     ))
 }
 
-/// Parse the socket path from command-line arguments
+/// Parse plugin configuration from command-line arguments and environment variables
+///
+/// This function parses both command-line arguments and environment variables
+/// to build the complete plugin configuration, including ID assignment settings.
+///
+/// # Safety
+/// This function is unsafe because it dereferences raw pointers from C
+///
+/// # Arguments
+/// * `argc` - Number of command-line arguments
+/// * `argv` - Array of command-line argument strings
+///
+/// # Returns
+/// A `PluginConfig` struct with parsed configuration values
+unsafe fn parse_plugin_config(argc: c_int, argv: *const *const c_char) -> PluginConfig {
+    let mut config = PluginConfig::default();
+
+    // Parse command-line arguments
+    if !argv.is_null() {
+        for i in 0..argc as isize {
+            let arg_ptr = *argv.offset(i);
+            if arg_ptr.is_null() {
+                continue;
+            }
+
+            let arg = CStr::from_ptr(arg_ptr).to_string_lossy();
+
+            // Socket path configuration
+            if arg == "--socket-path" && i + 1 < argc as isize {
+                let path_ptr = *argv.offset(i + 1);
+                if !path_ptr.is_null() {
+                    let path = CStr::from_ptr(path_ptr).to_string_lossy();
+                    config.socket_path = PathBuf::from(path.into_owned());
+                }
+            } else if arg.starts_with("--socket-path=") {
+                let path = arg.strip_prefix("--socket-path=").unwrap();
+                config.socket_path = PathBuf::from(path.to_string());
+            }
+            // Max connections configuration
+            else if arg == "--max-connections" && i + 1 < argc as isize {
+                let value_ptr = *argv.offset(i + 1);
+                if !value_ptr.is_null() {
+                    let value = CStr::from_ptr(value_ptr).to_string_lossy();
+                    if let Ok(max_conn) = value.parse::<usize>() {
+                        config.max_connections = max_conn;
+                    }
+                }
+            } else if arg.starts_with("--max-connections=") {
+                let value = arg.strip_prefix("--max-connections=").unwrap();
+                if let Ok(max_conn) = value.parse::<usize>() {
+                    config.max_connections = max_conn;
+                }
+            }
+            // ID assignment start ID
+            else if arg == "--id-start" && i + 1 < argc as isize {
+                let value_ptr = *argv.offset(i + 1);
+                if !value_ptr.is_null() {
+                    let value = CStr::from_ptr(value_ptr).to_string_lossy();
+                    if let Ok(start_id) = parse_hex_or_decimal(&value) {
+                        config.id_assignment.start_id = start_id;
+                    }
+                }
+            } else if arg.starts_with("--id-start=") {
+                let value = arg.strip_prefix("--id-start=").unwrap();
+                if let Ok(start_id) = parse_hex_or_decimal(value) {
+                    config.id_assignment.start_id = start_id;
+                }
+            }
+            // ID assignment max ID
+            else if arg == "--id-max" && i + 1 < argc as isize {
+                let value_ptr = *argv.offset(i + 1);
+                if !value_ptr.is_null() {
+                    let value = CStr::from_ptr(value_ptr).to_string_lossy();
+                    if let Ok(max_id) = parse_hex_or_decimal(&value) {
+                        config.id_assignment.max_id = max_id;
+                    }
+                }
+            } else if arg.starts_with("--id-max=") {
+                let value = arg.strip_prefix("--id-max=").unwrap();
+                if let Ok(max_id) = parse_hex_or_decimal(value) {
+                    config.id_assignment.max_id = max_id;
+                }
+            }
+            // ID assignment invalid ID
+            else if arg == "--id-invalid" && i + 1 < argc as isize {
+                let value_ptr = *argv.offset(i + 1);
+                if !value_ptr.is_null() {
+                    let value = CStr::from_ptr(value_ptr).to_string_lossy();
+                    if let Ok(invalid_id) = parse_hex_or_decimal(&value) {
+                        config.id_assignment.invalid_id = invalid_id;
+                    }
+                }
+            } else if arg.starts_with("--id-invalid=") {
+                let value = arg.strip_prefix("--id-invalid=").unwrap();
+                if let Ok(invalid_id) = parse_hex_or_decimal(value) {
+                    config.id_assignment.invalid_id = invalid_id;
+                }
+            }
+            // ID assignment lock timeout
+            else if arg == "--id-lock-timeout" && i + 1 < argc as isize {
+                let value_ptr = *argv.offset(i + 1);
+                if !value_ptr.is_null() {
+                    let value = CStr::from_ptr(value_ptr).to_string_lossy();
+                    if let Ok(timeout) = value.parse::<u64>() {
+                        config.id_assignment.lock_timeout_ms = timeout;
+                    }
+                }
+            } else if arg.starts_with("--id-lock-timeout=") {
+                let value = arg.strip_prefix("--id-lock-timeout=").unwrap();
+                if let Ok(timeout) = value.parse::<u64>() {
+                    config.id_assignment.lock_timeout_ms = timeout;
+                }
+            }
+            // ID assignment max concurrent assignments
+            else if arg == "--id-max-concurrent" && i + 1 < argc as isize {
+                let value_ptr = *argv.offset(i + 1);
+                if !value_ptr.is_null() {
+                    let value = CStr::from_ptr(value_ptr).to_string_lossy();
+                    if let Ok(max_concurrent) = value.parse::<usize>() {
+                        config.id_assignment.max_concurrent_assignments = max_concurrent;
+                    }
+                }
+            } else if arg.starts_with("--id-max-concurrent=") {
+                let value = arg.strip_prefix("--id-max-concurrent=").unwrap();
+                if let Ok(max_concurrent) = value.parse::<usize>() {
+                    config.id_assignment.max_concurrent_assignments = max_concurrent;
+                }
+            }
+            // ID assignment operation timeout
+            else if arg == "--id-assignment-timeout" && i + 1 < argc as isize {
+                let value_ptr = *argv.offset(i + 1);
+                if !value_ptr.is_null() {
+                    let value = CStr::from_ptr(value_ptr).to_string_lossy();
+                    if let Ok(timeout) = value.parse::<u64>() {
+                        config.id_assignment.assignment_timeout_ms = timeout;
+                    }
+                }
+            } else if arg.starts_with("--id-assignment-timeout=") {
+                let value = arg.strip_prefix("--id-assignment-timeout=").unwrap();
+                if let Ok(timeout) = value.parse::<u64>() {
+                    config.id_assignment.assignment_timeout_ms = timeout;
+                }
+            }
+        }
+    }
+
+    // Parse environment variables (they override defaults but are overridden by command-line args)
+    parse_environment_config(&mut config);
+
+    config
+}
+
+/// Parse environment variables for plugin configuration
+///
+/// This function reads environment variables to configure the plugin.
+/// Environment variables are prefixed with "WESTON_IVI_" to avoid conflicts.
+///
+/// # Arguments
+/// * `config` - Mutable reference to the configuration to update
+fn parse_environment_config(config: &mut PluginConfig) {
+    // Socket path
+    if let Ok(socket_path) = env::var("WESTON_IVI_SOCKET_PATH") {
+        config.socket_path = PathBuf::from(socket_path);
+    }
+
+    // Max connections
+    if let Ok(max_conn_str) = env::var("WESTON_IVI_MAX_CONNECTIONS") {
+        if let Ok(max_conn) = max_conn_str.parse::<usize>() {
+            config.max_connections = max_conn;
+        }
+    }
+
+    // ID assignment start ID
+    if let Ok(start_id_str) = env::var("WESTON_IVI_ID_START") {
+        if let Ok(start_id) = parse_hex_or_decimal(&start_id_str) {
+            config.id_assignment.start_id = start_id;
+        }
+    }
+
+    // ID assignment max ID
+    if let Ok(max_id_str) = env::var("WESTON_IVI_ID_MAX") {
+        if let Ok(max_id) = parse_hex_or_decimal(&max_id_str) {
+            config.id_assignment.max_id = max_id;
+        }
+    }
+
+    // ID assignment invalid ID
+    if let Ok(invalid_id_str) = env::var("WESTON_IVI_ID_INVALID") {
+        if let Ok(invalid_id) = parse_hex_or_decimal(&invalid_id_str) {
+            config.id_assignment.invalid_id = invalid_id;
+        }
+    }
+
+    // ID assignment lock timeout
+    if let Ok(timeout_str) = env::var("WESTON_IVI_ID_LOCK_TIMEOUT") {
+        if let Ok(timeout) = timeout_str.parse::<u64>() {
+            config.id_assignment.lock_timeout_ms = timeout;
+        }
+    }
+
+    // ID assignment max concurrent assignments
+    if let Ok(max_concurrent_str) = env::var("WESTON_IVI_ID_MAX_CONCURRENT") {
+        if let Ok(max_concurrent) = max_concurrent_str.parse::<usize>() {
+            config.id_assignment.max_concurrent_assignments = max_concurrent;
+        }
+    }
+
+    // ID assignment operation timeout
+    if let Ok(timeout_str) = env::var("WESTON_IVI_ID_ASSIGNMENT_TIMEOUT") {
+        if let Ok(timeout) = timeout_str.parse::<u64>() {
+            config.id_assignment.assignment_timeout_ms = timeout;
+        }
+    }
+}
+
+/// Parse a string as either hexadecimal (with 0x prefix) or decimal
+///
+/// # Arguments
+/// * `value` - The string value to parse
+///
+/// # Returns
+/// * `Ok(u32)` - Successfully parsed value
+/// * `Err(std::num::ParseIntError)` - Parse error
+fn parse_hex_or_decimal(value: &str) -> Result<u32, std::num::ParseIntError> {
+    if value.starts_with("0x") || value.starts_with("0X") {
+        u32::from_str_radix(&value[2..], 16)
+    } else {
+        value.parse::<u32>()
+    }
+}
+
+/// Parse the socket path from command-line arguments (legacy function for compatibility)
 ///
 /// # Safety
 /// This function is unsafe because it dereferences raw pointers from C
 unsafe fn parse_socket_path(argc: c_int, argv: *const *const c_char) -> Option<PathBuf> {
-    if argv.is_null() {
-        return None;
-    }
-
-    // Look for --socket-path argument
-    for i in 0..argc as isize {
-        let arg_ptr = *argv.offset(i);
-        if arg_ptr.is_null() {
-            continue;
-        }
-
-        let arg = CStr::from_ptr(arg_ptr).to_string_lossy();
-
-        if arg == "--socket-path" && i + 1 < argc as isize {
-            let path_ptr = *argv.offset(i + 1);
-            if !path_ptr.is_null() {
-                let path = CStr::from_ptr(path_ptr).to_string_lossy();
-                return Some(PathBuf::from(path.into_owned()));
-            }
-        } else if arg.starts_with("--socket-path=") {
-            let path = arg.strip_prefix("--socket-path=").unwrap();
-            return Some(PathBuf::from(path.to_string()));
-        }
-    }
-
-    None
+    let config = parse_plugin_config(argc, argv);
+    Some(config.socket_path)
 }
 
 /// Retrieve the IVI layout API from the Weston compositor
@@ -442,4 +810,106 @@ pub extern "C" fn wet_module_destroy(_plugin_data: *mut c_void) {
     // No-op: Cleanup is handled by compositor_destroy_handler registered
     // via weston_compositor_add_destroy_listener_once in wet_module_init
     jdebug!("wet_module_destroy called (no-op - cleanup handled by destroy listener)");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CString;
+
+    #[test]
+    fn test_plugin_config_default() {
+        let config = PluginConfig::default();
+        assert_eq!(
+            config.socket_path,
+            PathBuf::from("/tmp/weston-ivi-controller.sock")
+        );
+        assert_eq!(config.max_connections, 10);
+        assert_eq!(config.id_assignment.start_id, 0x10000000);
+        assert_eq!(config.id_assignment.max_id, 0xFFFFFFFE);
+        assert_eq!(config.id_assignment.invalid_id, 0xFFFFFFFF);
+    }
+
+    #[test]
+    fn test_plugin_config_validation_success() {
+        let config = PluginConfig::default();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_plugin_config_validation_invalid_max_connections() {
+        let mut config = PluginConfig::default();
+        config.max_connections = 0;
+        assert!(config.validate().is_err());
+
+        config.max_connections = 2000;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_parse_hex_or_decimal() {
+        assert_eq!(parse_hex_or_decimal("42").unwrap(), 42);
+        assert_eq!(parse_hex_or_decimal("0x2A").unwrap(), 42);
+        assert_eq!(parse_hex_or_decimal("0X2A").unwrap(), 42);
+        assert_eq!(parse_hex_or_decimal("0xFFFFFFFF").unwrap(), 0xFFFFFFFF);
+        assert!(parse_hex_or_decimal("invalid").is_err());
+    }
+
+    #[test]
+    fn test_parse_plugin_config_defaults() {
+        unsafe {
+            let config = parse_plugin_config(0, std::ptr::null());
+            assert_eq!(
+                config.socket_path,
+                PathBuf::from("/tmp/weston-ivi-controller.sock")
+            );
+            assert_eq!(config.max_connections, 10);
+            assert_eq!(config.id_assignment.start_id, 0x10000000);
+        }
+    }
+
+    #[test]
+    fn test_parse_plugin_config_with_args() {
+        unsafe {
+            // Create test arguments
+            let socket_path_arg = CString::new("--socket-path=/tmp/test.sock").unwrap();
+            let max_conn_arg = CString::new("--max-connections=5").unwrap();
+            let id_start_arg = CString::new("--id-start=0x20000000").unwrap();
+            let id_max_arg = CString::new("--id-max=0x30000000").unwrap();
+
+            let args = vec![
+                socket_path_arg.as_ptr(),
+                max_conn_arg.as_ptr(),
+                id_start_arg.as_ptr(),
+                id_max_arg.as_ptr(),
+            ];
+
+            let config = parse_plugin_config(args.len() as i32, args.as_ptr());
+
+            assert_eq!(config.socket_path, PathBuf::from("/tmp/test.sock"));
+            assert_eq!(config.max_connections, 5);
+            assert_eq!(config.id_assignment.start_id, 0x20000000);
+            assert_eq!(config.id_assignment.max_id, 0x30000000);
+        }
+    }
+
+    #[test]
+    fn test_parse_environment_config() {
+        // Set test environment variables
+        env::set_var("WESTON_IVI_SOCKET_PATH", "/tmp/env-test.sock");
+        env::set_var("WESTON_IVI_MAX_CONNECTIONS", "15");
+        env::set_var("WESTON_IVI_ID_START", "0x40000000");
+
+        let mut config = PluginConfig::default();
+        parse_environment_config(&mut config);
+
+        assert_eq!(config.socket_path, PathBuf::from("/tmp/env-test.sock"));
+        assert_eq!(config.max_connections, 15);
+        assert_eq!(config.id_assignment.start_id, 0x40000000);
+
+        // Clean up environment variables
+        env::remove_var("WESTON_IVI_SOCKET_PATH");
+        env::remove_var("WESTON_IVI_MAX_CONNECTIONS");
+        env::remove_var("WESTON_IVI_ID_START");
+    }
 }

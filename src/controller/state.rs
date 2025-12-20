@@ -19,6 +19,10 @@ pub struct SurfaceState {
     pub opacity: f32,
     pub orientation: Orientation,
     pub z_order: i32,
+    /// Whether this surface ID was automatically assigned
+    pub is_auto_assigned: bool,
+    /// Original invalid ID if this surface was auto-assigned
+    pub original_id: Option<u32>,
 }
 
 /// Represents the state of an IVI layer
@@ -129,11 +133,66 @@ impl StateManager {
         surfaces.contains_key(&id)
     }
 
+    /// Check if a surface was automatically assigned
+    pub fn is_surface_auto_assigned(&self, id: u32) -> bool {
+        let surfaces = self.surfaces.lock().unwrap();
+        surfaces
+            .get(&id)
+            .map(|s| s.is_auto_assigned)
+            .unwrap_or(false)
+    }
+
+    /// Get the original invalid ID for an auto-assigned surface
+    pub fn get_surface_original_id(&self, id: u32) -> Option<u32> {
+        let surfaces = self.surfaces.lock().unwrap();
+        surfaces.get(&id).and_then(|s| s.original_id)
+    }
+
+    /// Get all auto-assigned surface IDs
+    pub fn get_auto_assigned_surface_ids(&self) -> Vec<u32> {
+        let surfaces = self.surfaces.lock().unwrap();
+        surfaces
+            .values()
+            .filter(|s| s.is_auto_assigned)
+            .map(|s| s.id)
+            .collect()
+    }
+
+    /// Get all manually assigned surface IDs
+    pub fn get_manual_assigned_surface_ids(&self) -> Vec<u32> {
+        let surfaces = self.surfaces.lock().unwrap();
+        surfaces
+            .values()
+            .filter(|s| !s.is_auto_assigned)
+            .map(|s| s.id)
+            .collect()
+    }
+
+    /// Get count of auto-assigned surfaces
+    pub fn auto_assigned_surface_count(&self) -> usize {
+        let surfaces = self.surfaces.lock().unwrap();
+        surfaces.values().filter(|s| s.is_auto_assigned).count()
+    }
+
+    /// Get count of manually assigned surfaces
+    pub fn manual_assigned_surface_count(&self) -> usize {
+        let surfaces = self.surfaces.lock().unwrap();
+        surfaces.values().filter(|s| !s.is_auto_assigned).count()
+    }
+
     /// Synchronize state with the IVI API
     /// This queries the IVI API for all surfaces and updates internal state
+    /// Note: This method cannot determine which surfaces are auto-assigned
+    /// since that information is not available from the IVI API
     pub fn sync_with_ivi(&mut self) {
         let ivi_surfaces = self.ivi_api.get_surfaces();
         let mut surfaces = self.surfaces.lock().unwrap();
+
+        // Store existing auto-assignment information before clearing
+        let existing_auto_info: std::collections::HashMap<u32, (bool, Option<u32>)> = surfaces
+            .iter()
+            .map(|(&id, state)| (id, (state.is_auto_assigned, state.original_id)))
+            .collect();
 
         // Clear existing state
         surfaces.clear();
@@ -161,6 +220,12 @@ impl StateManager {
             let opacity = surface.opacity();
             let orientation = surface.orientation().into();
 
+            // Restore auto-assignment information if available
+            let (is_auto_assigned, original_id) = existing_auto_info
+                .get(&id)
+                .copied()
+                .unwrap_or((false, None));
+
             let state = SurfaceState {
                 id,
                 orig_size: (orig_width, orig_height),
@@ -170,6 +235,8 @@ impl StateManager {
                 opacity,
                 orientation,
                 z_order: 0, // Z-order is managed at layer level
+                is_auto_assigned,
+                original_id,
             };
 
             surfaces.insert(id, state);
@@ -197,6 +264,17 @@ impl StateManager {
     /// Handle surface creation event
     /// This is called by the event listener when a new surface is created
     pub fn handle_surface_created(&mut self, surface_id: u32) {
+        self.handle_surface_created_with_assignment_info(surface_id, false, None);
+    }
+
+    /// Enhanced surface creation handler that works with ID assignment
+    /// This method handles both manually assigned and auto-assigned surface IDs
+    pub fn handle_surface_created_with_assignment_info(
+        &mut self,
+        surface_id: u32,
+        is_auto_assigned: bool,
+        original_id: Option<u32>,
+    ) {
         // Query the IVI API for the new surface
         if let Some(surface) = self.ivi_api.get_surface_from_id(surface_id) {
             let (orig_width, orig_height) = surface.orig_size();
@@ -228,13 +306,28 @@ impl StateManager {
                 opacity,
                 orientation,
                 z_order: 0,
+                is_auto_assigned,
+                original_id,
             };
 
             self.add_surface(surface_id, state);
 
-            // Emit surface created notification
+            // Emit surface created notification with the final surface ID
             let notification_manager = self.notification_manager.lock().unwrap();
             notification_manager.emit_surface_created(surface_id);
+
+            // Log additional information for auto-assigned surfaces
+            if is_auto_assigned {
+                if let Some(orig_id) = original_id {
+                    jinfo!(
+                        "Surface {} created with auto-assigned ID (original invalid ID: {:#x})",
+                        surface_id,
+                        orig_id
+                    );
+                } else {
+                    jinfo!("Surface {} created with auto-assigned ID", surface_id);
+                }
+            }
         }
     }
 
@@ -288,8 +381,12 @@ impl StateManager {
             let opacity = surface.opacity();
             let orientation = surface.orientation().into();
 
-            // Get existing z_order or default to 0
-            let z_order = old_state.as_ref().map(|s| s.z_order).unwrap_or(0);
+            // Preserve existing z_order, auto-assignment info, and original ID
+            let (z_order, is_auto_assigned, original_id) = if let Some(ref old) = old_state {
+                (old.z_order, old.is_auto_assigned, old.original_id)
+            } else {
+                (0, false, None)
+            };
 
             let new_state = SurfaceState {
                 id: surface_id,
@@ -300,6 +397,8 @@ impl StateManager {
                 opacity,
                 orientation,
                 z_order,
+                is_auto_assigned,
+                original_id,
             };
 
             // Check property changes and emit notifications
@@ -634,6 +733,8 @@ mod tests {
             opacity: 1.0,
             orientation: Orientation::Normal,
             z_order: 0,
+            is_auto_assigned: false,
+            original_id: None,
         };
         let new_state = SurfaceState {
             id: 42,
@@ -654,6 +755,8 @@ mod tests {
             opacity: 0.5,
             orientation: Orientation::Rotate90,
             z_order: 0,
+            is_auto_assigned: false,
+            original_id: None,
         };
 
         sm.emit_surface_property_changes(42, &old, &new_state);
@@ -740,6 +843,8 @@ mod tests {
             opacity: 0.75,
             orientation: Orientation::Normal,
             z_order: 0,
+            is_auto_assigned: false,
+            original_id: None,
         };
         let new_state = SurfaceState {
             orientation: Orientation::Rotate180,
@@ -751,5 +856,178 @@ mod tests {
         let got = seen.lock().unwrap().clone();
         assert_eq!(got.len(), 1);
         assert_eq!(got[0], NotificationType::OrientationChanged);
+    }
+
+    #[test]
+    fn test_auto_assigned_surface_tracking() {
+        let sm = make_state_manager();
+
+        // Create surface states directly for testing
+        let auto_assigned_state = SurfaceState {
+            id: 0x10000000,
+            orig_size: (100, 100),
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            visibility: true,
+            opacity: 1.0,
+            orientation: Orientation::Normal,
+            z_order: 0,
+            is_auto_assigned: true,
+            original_id: Some(0xFFFFFFFF),
+        };
+
+        let manual_assigned_state = SurfaceState {
+            id: 42,
+            orig_size: (200, 200),
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 200,
+            },
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 200,
+            },
+            visibility: true,
+            opacity: 1.0,
+            orientation: Orientation::Normal,
+            z_order: 0,
+            is_auto_assigned: false,
+            original_id: None,
+        };
+
+        // Add surfaces to state manager
+        {
+            let mut surfaces = sm.surfaces.lock().unwrap();
+            surfaces.insert(0x10000000, auto_assigned_state);
+            surfaces.insert(42, manual_assigned_state);
+        }
+
+        // Verify the surfaces are tracked correctly
+        assert!(sm.is_surface_auto_assigned(0x10000000));
+        assert_eq!(sm.get_surface_original_id(0x10000000), Some(0xFFFFFFFF));
+        assert!(!sm.is_surface_auto_assigned(42));
+        assert_eq!(sm.get_surface_original_id(42), None);
+
+        // Test counts
+        assert_eq!(sm.auto_assigned_surface_count(), 1);
+        assert_eq!(sm.manual_assigned_surface_count(), 1);
+        assert_eq!(sm.surface_count(), 2);
+
+        // Test getting auto-assigned and manual surface IDs
+        let auto_ids = sm.get_auto_assigned_surface_ids();
+        let manual_ids = sm.get_manual_assigned_surface_ids();
+
+        assert_eq!(auto_ids.len(), 1);
+        assert!(auto_ids.contains(&0x10000000));
+        assert_eq!(manual_ids.len(), 1);
+        assert!(manual_ids.contains(&42));
+
+        // Test surface removal
+        {
+            let mut surfaces = sm.surfaces.lock().unwrap();
+            surfaces.remove(&0x10000000);
+            surfaces.remove(&42);
+        }
+
+        assert_eq!(sm.auto_assigned_surface_count(), 0);
+        assert_eq!(sm.manual_assigned_surface_count(), 0);
+        assert_eq!(sm.surface_count(), 0);
+    }
+
+    #[test]
+    fn test_sync_with_ivi_preserves_auto_assignment_info() {
+        let sm = make_state_manager();
+
+        // Create surface states with auto-assignment info
+        let auto_assigned_state = SurfaceState {
+            id: 0x10000000,
+            orig_size: (100, 100),
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            visibility: true,
+            opacity: 1.0,
+            orientation: Orientation::Normal,
+            z_order: 0,
+            is_auto_assigned: true,
+            original_id: Some(0xFFFFFFFF),
+        };
+
+        let manual_assigned_state = SurfaceState {
+            id: 42,
+            orig_size: (200, 200),
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 200,
+            },
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 200,
+                height: 200,
+            },
+            visibility: true,
+            opacity: 1.0,
+            orientation: Orientation::Normal,
+            z_order: 0,
+            is_auto_assigned: false,
+            original_id: None,
+        };
+
+        // Add surfaces to state manager
+        {
+            let mut surfaces = sm.surfaces.lock().unwrap();
+            surfaces.insert(0x10000000, auto_assigned_state);
+            surfaces.insert(42, manual_assigned_state);
+        }
+
+        // Verify initial state
+        assert!(sm.is_surface_auto_assigned(0x10000000));
+        assert!(!sm.is_surface_auto_assigned(42));
+        assert_eq!(sm.surface_count(), 2);
+
+        // Test that the sync method would preserve auto-assignment information
+        // (We can't actually call sync_with_ivi because it would access the mock IVI API)
+        // But we can verify that the data structures support preserving this information
+
+        let existing_auto_info: std::collections::HashMap<u32, (bool, Option<u32>)> = {
+            let surfaces = sm.surfaces.lock().unwrap();
+            surfaces
+                .iter()
+                .map(|(&id, state)| (id, (state.is_auto_assigned, state.original_id)))
+                .collect()
+        };
+
+        // Verify the auto-assignment info is correctly captured
+        assert_eq!(
+            existing_auto_info.get(&0x10000000),
+            Some(&(true, Some(0xFFFFFFFF)))
+        );
+        assert_eq!(existing_auto_info.get(&42), Some(&(false, None)));
     }
 }

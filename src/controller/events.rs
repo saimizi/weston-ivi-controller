@@ -1,12 +1,13 @@
 // Event handling for IVI surface lifecycle
 
+use super::id_assignment::IdAssignmentManager;
 use super::state::StateManager;
 use crate::ffi::bindings::ivi_layer::IviLayer;
 use crate::ffi::bindings::ivi_layout_api::IviLayoutApi;
 use crate::ffi::bindings::ivi_surface::IviSurface;
 use crate::ffi::bindings::*;
 #[allow(unused)]
-use jlogger_tracing::{jdebug, jerror, jinfo};
+use jlogger_tracing::{jdebug, jerror, jinfo, jwarn};
 use std::collections::HashMap;
 use std::os::raw::c_void;
 use std::sync::{Arc, Mutex};
@@ -15,6 +16,7 @@ use std::sync::{Arc, Mutex};
 pub struct EventContext {
     state_manager: Arc<Mutex<StateManager>>,
     ivi_api: Arc<IviLayoutApi>,
+    id_assignment_manager: Arc<IdAssignmentManager>,
     surface_prop_listeners: Mutex<HashMap<u32, *mut wl_listener>>, // per-surface property listeners
     layer_prop_listeners: Mutex<HashMap<u32, *mut wl_listener>>,   // per-layer property listeners
 }
@@ -25,10 +27,15 @@ unsafe impl Sync for EventContext {}
 
 impl EventContext {
     /// Create a new event context
-    pub fn new(state_manager: Arc<Mutex<StateManager>>, ivi_api: Arc<IviLayoutApi>) -> Self {
+    pub fn new(
+        state_manager: Arc<Mutex<StateManager>>,
+        ivi_api: Arc<IviLayoutApi>,
+        id_assignment_manager: Arc<IdAssignmentManager>,
+    ) -> Self {
         Self {
             state_manager,
             ivi_api,
+            id_assignment_manager,
             surface_prop_listeners: Mutex::new(HashMap::new()),
             layer_prop_listeners: Mutex::new(HashMap::new()),
         }
@@ -150,6 +157,7 @@ impl EventContext {
             Arc::new(Self {
                 state_manager: Arc::clone(&self.state_manager),
                 ivi_api: Arc::clone(&self.ivi_api),
+                id_assignment_manager: Arc::clone(&self.id_assignment_manager),
                 surface_prop_listeners: Mutex::new(HashMap::new()),
                 layer_prop_listeners: Mutex::new(HashMap::new()),
             }),
@@ -218,6 +226,7 @@ impl EventContext {
             Arc::new(Self {
                 state_manager: Arc::clone(&self.state_manager),
                 ivi_api: Arc::clone(&self.ivi_api),
+                id_assignment_manager: Arc::clone(&self.id_assignment_manager),
                 surface_prop_listeners: Mutex::new(HashMap::new()),
                 layer_prop_listeners: Mutex::new(HashMap::new()),
             }),
@@ -253,6 +262,11 @@ impl EventContext {
                 .remove(&(listener as usize));
             libc::free(listener as *mut c_void);
         }
+    }
+
+    /// Get a reference to the ID assignment manager
+    pub fn id_assignment_manager(&self) -> &Arc<IdAssignmentManager> {
+        &self.id_assignment_manager
     }
 }
 
@@ -346,13 +360,70 @@ pub unsafe extern "C" fn surface_created_callback(listener: *mut wl_listener, da
         ) {
             // Get the surface ID using the stored API pointer
             let surface_id = surface.id();
-            if let Ok(mut state_manager) = context.state_manager.lock() {
-                state_manager.handle_surface_created(surface_id);
+
+            // Handle ID assignment and replacement if needed
+            match context
+                .id_assignment_manager
+                .handle_surface_created(surface_id)
+            {
+                Ok(assignment_info) => {
+                    if let Some(info) = assignment_info {
+                        // ID was assigned and replaced - use the new ID for state management
+                        jinfo!(
+                            "Surface {} had invalid ID, assigned and replaced with new ID: {}",
+                            surface_id,
+                            info.assigned_id
+                        );
+
+                        // Update state manager with the assigned surface ID and assignment info
+                        if let Ok(mut state_manager) = context.state_manager.lock() {
+                            state_manager.handle_surface_created_with_assignment_info(
+                                info.assigned_id,
+                                true,             // is_auto_assigned
+                                Some(surface_id), // original_id
+                            );
+                        }
+
+                        // Register per-surface property listener for the assigned surface ID
+                        context
+                            .register_surface_property_listener_by_id(info.assigned_id)
+                            .ok();
+                    } else {
+                        // Valid ID - use as-is, mark as manually assigned
+                        // Update state manager with the original surface ID
+                        if let Ok(mut state_manager) = context.state_manager.lock() {
+                            state_manager.handle_surface_created_with_assignment_info(
+                                surface_id, false, // is_auto_assigned (valid ID means manual)
+                                None,  // original_id
+                            );
+                        }
+
+                        // Register per-surface property listener for the original surface ID
+                        context
+                            .register_surface_property_listener_by_id(surface_id)
+                            .ok();
+                    }
+                }
+                Err(e) => {
+                    jerror!(
+                        "Failed to handle surface creation with ID assignment for surface {}: {}",
+                        surface_id,
+                        e
+                    );
+
+                    // Fall back to normal surface creation handling
+                    if let Ok(mut state_manager) = context.state_manager.lock() {
+                        state_manager.handle_surface_created_with_assignment_info(
+                            surface_id, false, // is_auto_assigned
+                            None,  // original_id
+                        );
+                    }
+
+                    context
+                        .register_surface_property_listener_by_id(surface_id)
+                        .ok();
+                }
             }
-            // Register per-surface property listener for this surface
-            context
-                .register_surface_property_listener_by_id(surface_id)
-                .ok();
         }
     }
 }
@@ -375,9 +446,40 @@ pub unsafe extern "C" fn surface_removed_callback(listener: *mut wl_listener, da
             Arc::clone(&context.ivi_api),
         ) {
             let surface_id = surface.id();
+
+            // Handle ID release for auto-assigned IDs
+            match context
+                .id_assignment_manager
+                .handle_surface_destroyed(surface_id)
+            {
+                Ok(was_auto_assigned) => {
+                    if was_auto_assigned {
+                        jinfo!(
+                            "Released auto-assigned surface ID {} due to surface destruction",
+                            surface_id
+                        );
+                    } else {
+                        jdebug!(
+                            "Released manually assigned surface ID {} due to surface destruction",
+                            surface_id
+                        );
+                    }
+                }
+                Err(e) => {
+                    jwarn!(
+                        "Failed to handle surface destruction with ID release for surface {}: {}",
+                        surface_id,
+                        e
+                    );
+                    // Continue with normal destruction handling even if ID release fails
+                }
+            }
+
+            // Update state manager
             if let Ok(mut state_manager) = context.state_manager.lock() {
                 state_manager.handle_surface_destroyed(surface_id);
             }
+
             // Remove and free property listener for this surface
             context.remove_surface_property_listener(surface_id);
         }
