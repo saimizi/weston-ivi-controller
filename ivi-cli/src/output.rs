@@ -831,8 +831,12 @@ pub fn format_hierarchical_scene(
     }
 
     let mut output = String::new();
+    let layer_indent = " ".repeat(8);
+    let layer_prop_indent = " ".repeat(12);
+    let surface_indent = " ".repeat(18);
+    let surface_prop_indent = " ".repeat(22);
 
-    for (screen_idx, (screen, layers)) in hierarchy.iter().enumerate() {
+    for (_screen_idx, (screen, layers)) in hierarchy.iter().enumerate() {
         // Screen header
         output.push_str(&format!("Screen: {}\n", screen.name));
 
@@ -847,57 +851,80 @@ pub fn format_hierarchical_scene(
         output.push_str(&format!("  Scale: {}\n", screen.scale));
 
         if layers.is_empty() {
-            output.push_str("  No layers assigned\n");
+            output.push_str(&format!("{}No layers assigned\n", layer_indent));
         } else {
-            for (layer_idx, (layer, surfaces)) in layers.iter().enumerate() {
-                output.push('\n');
+            for (_layer_idx, (layer, surfaces)) in layers.iter().enumerate() {
+                //output.push('\n');
 
                 // Layer header (2-space indent)
-                output.push_str(&format!("  Layer {}:\n", layer.id));
+                output.push_str(&format!("{}Layer {}:\n", layer_indent, layer.id));
 
                 // Layer properties (4-space indent)
-                output.push_str(&format!("    SrcRect: {}\n", layer.src_rect));
-                output.push_str(&format!("    DestRect: {}\n", layer.dest_rect));
-                output.push_str(&format!("    Visibility: {}\n", layer.visibility));
-                output.push_str(&format!("    Opacity: {:.2}\n", layer.opacity));
-                output.push_str(&format!("    Orientation: {}\n", layer.orientation));
+                output.push_str(&format!(
+                    "{}SrcRect: {}\n",
+                    layer_prop_indent, layer.src_rect
+                ));
+                output.push_str(&format!(
+                    "{}DestRect: {}\n",
+                    layer_prop_indent, layer.dest_rect
+                ));
+                output.push_str(&format!(
+                    "{}Visibility: {}\n",
+                    layer_prop_indent, layer.visibility
+                ));
+                output.push_str(&format!(
+                    "{}Opacity: {:.2}\n",
+                    layer_prop_indent, layer.opacity
+                ));
+                output.push_str(&format!(
+                    "{}Orientation: {}\n",
+                    layer_prop_indent, layer.orientation
+                ));
 
                 if surfaces.is_empty() {
-                    output.push_str("    No surfaces assigned\n");
+                    output.push_str(&format!("{}No surfaces assigned\n", surface_indent));
                 } else {
-                    for (surface_idx, surface) in surfaces.iter().enumerate() {
-                        output.push('\n');
+                    for (_surface_idx, surface) in surfaces.iter().enumerate() {
+                        //output.push('\n');
 
-                        // Surface header (4-space indent)
-                        output.push_str(&format!("    Surface {}:\n", surface.id));
+                        // Surface header (6-space indent)
+                        output.push_str(&format!("{}Surface {}:\n", surface_indent, surface.id));
 
-                        // Surface properties (6-space indent)
-                        output.push_str(&format!("      OrigSize: {}\n", surface.orig_size));
-                        output.push_str(&format!("      SrcRect: {}\n", surface.src_rect));
-                        output.push_str(&format!("      DestRect: {}\n", surface.dest_rect));
-                        output.push_str(&format!("      Visibility: {}\n", surface.visibility));
-                        output.push_str(&format!("      Opacity: {:.2}\n", surface.opacity));
-                        output.push_str(&format!("      Orientation: {}\n", surface.orientation));
-                        output.push_str(&format!("      Z-Order: {}\n", surface.z_order));
-
-                        // Don't add extra newline after last surface in layer
-                        if surface_idx < surfaces.len() - 1 {
-                            output.push('\n');
-                        }
+                        // Surface properties (8-space indent)
+                        output.push_str(&format!(
+                            "{}OrigSize: {}\n",
+                            surface_prop_indent, surface.orig_size
+                        ));
+                        output.push_str(&format!(
+                            "{}SrcRect: {}\n",
+                            surface_prop_indent, surface.src_rect
+                        ));
+                        output.push_str(&format!(
+                            "{}DestRect: {}\n",
+                            surface_prop_indent, surface.dest_rect
+                        ));
+                        output.push_str(&format!(
+                            "{}Visibility: {}\n",
+                            surface_prop_indent, surface.visibility
+                        ));
+                        output.push_str(&format!(
+                            "{}Opacity: {:.2}\n",
+                            surface_prop_indent, surface.opacity
+                        ));
+                        output.push_str(&format!(
+                            "{}Orientation: {}\n",
+                            surface_prop_indent, surface.orientation
+                        ));
+                        output.push_str(&format!(
+                            "{}Z-Order: {}\n",
+                            surface_prop_indent, surface.z_order
+                        ));
                     }
-                }
-
-                // Don't add extra newline after last layer in screen
-                if layer_idx < layers.len() - 1 {
-                    output.push('\n');
                 }
             }
         }
 
-        // Add spacing between screens (but not after the last one)
-        if screen_idx < hierarchy.len() - 1 {
-            output.push_str("\n\n");
-        }
+        output.push_str("---------------------------------------------\n");
     }
 
     output
