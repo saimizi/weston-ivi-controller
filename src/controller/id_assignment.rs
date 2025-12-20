@@ -342,6 +342,7 @@ impl IdAssignmentConfig {
 /// This registry maintains the state of all active surface IDs in the system,
 /// distinguishing between manually assigned and auto-assigned IDs. It provides
 /// conflict detection, ID availability checking, and statistics for monitoring.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct SurfaceIdRegistry {
     /// Set of all currently active surface IDs
@@ -1912,7 +1913,7 @@ impl IdAssignmentManager {
     /// * `Err(IdAssignmentError)` - Failed to acquire lock within timeout
     fn acquire_registry_read_lock(
         &self,
-    ) -> IdAssignmentResult<std::sync::RwLockReadGuard<SurfaceIdRegistry>> {
+    ) -> IdAssignmentResult<std::sync::RwLockReadGuard<'_, SurfaceIdRegistry>> {
         let timeout = Duration::from_millis(self.config.lock_timeout_ms);
         let start_time = Instant::now();
 
@@ -1957,7 +1958,7 @@ impl IdAssignmentManager {
     /// * `Err(IdAssignmentError)` - Failed to acquire lock within timeout
     fn acquire_registry_write_lock(
         &self,
-    ) -> IdAssignmentResult<std::sync::RwLockWriteGuard<SurfaceIdRegistry>> {
+    ) -> IdAssignmentResult<std::sync::RwLockWriteGuard<'_, SurfaceIdRegistry>> {
         let timeout = Duration::from_millis(self.config.lock_timeout_ms);
         let start_time = Instant::now();
 
@@ -2000,7 +2001,7 @@ impl IdAssignmentManager {
     /// # Returns
     /// * `Ok(MutexGuard)` - Successfully acquired lock
     /// * `Err(IdAssignmentError)` - Failed to acquire lock within timeout
-    fn acquire_assigner_lock(&self) -> IdAssignmentResult<std::sync::MutexGuard<IdAssigner>> {
+    fn acquire_assigner_lock(&self) -> IdAssignmentResult<std::sync::MutexGuard<'_, IdAssigner>> {
         let timeout = Duration::from_millis(self.config.lock_timeout_ms);
         let start_time = Instant::now();
 

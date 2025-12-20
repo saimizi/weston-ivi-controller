@@ -774,15 +774,6 @@ fn parse_hex_or_decimal(value: &str) -> Result<u32, std::num::ParseIntError> {
     }
 }
 
-/// Parse the socket path from command-line arguments (legacy function for compatibility)
-///
-/// # Safety
-/// This function is unsafe because it dereferences raw pointers from C
-unsafe fn parse_socket_path(argc: c_int, argv: *const *const c_char) -> Option<PathBuf> {
-    let config = parse_plugin_config(argc, argv);
-    Some(config.socket_path)
-}
-
 /// Retrieve the IVI layout API from the Weston compositor
 ///
 /// # Safety
