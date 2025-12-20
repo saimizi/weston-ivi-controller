@@ -218,6 +218,7 @@ impl RpcHandler {
             RpcMethod::CreateLayer { id, width, height } => {
                 self.handle_create_layer(id, width, height, auto_commit)
             }
+            RpcMethod::DestroyLayer { id } => self.handle_destroy_layer(id, auto_commit),
             RpcMethod::GetLayer { id } => self.handle_get_layer(id),
             RpcMethod::SetLayerSourceRectangle {
                 id,
@@ -755,6 +756,53 @@ impl RpcHandler {
             "id": layer.id(),
             "committed": auto_commit,
         }))
+    }
+
+    /// Handle destroy_layer request
+    fn handle_destroy_layer(
+        &self,
+        id: u32,
+        auto_commit: bool,
+    ) -> Result<serde_json::Value, RpcError> {
+        jdebug!("Destroying layer {} [auto_commit={}]", id, auto_commit);
+
+        let state_manager = self.state_manager.lock().unwrap();
+        let ivi_api = state_manager.ivi_api().clone();
+
+        // Verify layer exists before attempting to destroy
+        if !state_manager.has_layer(id) {
+            jwarn!("Layer not found: {}", id);
+            return Err(RpcError::layer_not_found(id));
+        }
+
+        drop(state_manager);
+
+        // Get the layer from the IVI API
+        let layer = ivi_api
+            .get_layer_from_id(id)
+            .ok_or_else(|| RpcError::internal_error(format!("Failed to get IVI layer {}", id)))?;
+
+        // Destroy the layer (consumes self)
+        layer
+            .destroy()
+            .map_err(|e| RpcError::internal_error(format!("Failed to destroy layer: {}", e)))?;
+
+        jinfo!("Layer {} destroyed", id);
+
+        // Commit changes if auto_commit is true
+        if auto_commit {
+            ivi_api
+                .commit_changes()
+                .map_err(|e| RpcError::internal_error(e.to_string()))?;
+
+            // Update internal state - the layer is now destroyed
+            let mut state_manager = self.state_manager.lock().unwrap();
+            state_manager.handle_layer_destroyed(id);
+
+            jinfo!("Layer {} destruction committed", id);
+        }
+
+        Ok(json!({ "success": true, "committed": auto_commit }))
     }
 
     /// Handle get_layer request

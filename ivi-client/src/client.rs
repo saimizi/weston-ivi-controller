@@ -598,6 +598,37 @@ impl IviClient {
         Ok(IviRequestResult::CreateLayer(id))
     }
 
+    /// Destroys an existing layer in the IVI compositor.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The layer ID to destroy
+    /// * `auto_commit` - If true, automatically commits the changes
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The layer ID does not exist
+    /// - Communication with the controller fails
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use ivi_client::IviClient;
+    /// # fn main() -> ivi_client::Result<()> {
+    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// client.destroy_layer(2000, true)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn destroy_layer(&mut self, id: u32, auto_commit: bool) -> Result<()> {
+        self.send_request(
+            "destroy_layer",
+            json!({ "id": id, "auto_commit": auto_commit }),
+        )?;
+        Ok(())
+    }
+
     /// Sets the source rectangle of a layer.
     ///
     /// # Arguments

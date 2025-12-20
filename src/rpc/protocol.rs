@@ -242,6 +242,9 @@ pub enum RpcMethod {
         width: i32,
         height: i32,
     },
+    DestroyLayer {
+        id: u32,
+    },
     SetLayerSourceRectangle {
         id: u32,
         x: i32,
@@ -560,6 +563,17 @@ impl RpcMethod {
                         )
                     })? as i32;
                 Ok(RpcMethod::CreateLayer { id, width, height })
+            }
+
+            "destroy_layer" => {
+                let id = request
+                    .params
+                    .get("id")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
+                    })? as u32;
+                Ok(RpcMethod::DestroyLayer { id })
             }
 
             "get_layer" => {

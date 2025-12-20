@@ -61,6 +61,10 @@ pub fn format_layer_create_success(id: u32) -> String {
     format_success(&format!("Layer {} created", id))
 }
 
+pub fn format_layer_destroy_success(id: u32) -> String {
+    format_success(&format!("Layer {} destroyed", id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

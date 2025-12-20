@@ -130,6 +130,11 @@ enum LayerCommands {
         /// Height in pixels
         height: i32,
     },
+    /// Destroy an existing layer
+    Destroy {
+        /// Layer ID
+        id: u32,
+    },
     /// Set layer source rectangle
     SetSourceRect {
         /// Layer ID
@@ -384,6 +389,13 @@ fn handle_layer_create_layer(
     Ok(output::format_layer_create_success(id))
 }
 
+/// Handle layer destroy command
+fn handle_layer_destroy(socket_path: &str, id: u32) -> Result<String, Box<dyn std::error::Error>> {
+    let mut client = ivi_client::IviClient::connect(socket_path)?;
+    client.destroy_layer(id, true)?;
+    Ok(output::format_layer_destroy_success(id))
+}
+
 /// Handle layer set-source-rect command
 fn handle_layer_set_source_rect(
     socket_path: &str,
@@ -631,6 +643,7 @@ fn main() {
             LayerCommands::Create { id, width, height } => {
                 handle_layer_create_layer(&cli.socket, id, width, height)
             }
+            LayerCommands::Destroy { id } => handle_layer_destroy(&cli.socket, id),
             LayerCommands::SetSourceRect {
                 id,
                 x,
