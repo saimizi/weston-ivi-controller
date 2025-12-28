@@ -9,6 +9,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  LIBIPCON_VERSION: v0.1.0
 
 jobs:
   format:
@@ -30,15 +31,12 @@ jobs:
         run: cargo fmt --all --check
 
   test:
-    name: Test Suite
+    name: Test Suite (Default Features)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         rust: [stable]
-        # Note: Rust 1.70 disabled due to Cargo.lock format incompatibility
-        # Note: enable-ipcon requires libipcon which is not available in CI yet
-        # features: ["", "enable-ipcon"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -73,8 +71,58 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+  test-ipcon:
+    name: Test Suite (IPCON Feature)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libpixman-1-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libdrm-dev \
+            libgbm-dev \
+            libinput-dev \
+            libudev-dev
+
+      - name: Download and install libipcon
+        run: |
+          PACKAGE_VERSION="${LIBIPCON_VERSION#v}"
+          wget https://github.com/saimizi/libipcon/releases/download/$LIBIPCON_VERSION/libipcon_${PACKAGE_VERSION}_amd64.deb
+          sudo dpkg -i libipcon_${PACKAGE_VERSION}_amd64.deb || true
+          sudo apt-get install -f -y
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          # Use different cache key for ipcon feature
+          key: ipcon
+
+      - name: Build workspace with IPCON feature
+        run: cargo build --workspace --all-targets --features enable-ipcon
+
+      - name: Run tests with IPCON feature
+        run: cargo test --workspace --features enable-ipcon
+
   clippy:
-    name: Clippy Lints
+    name: Clippy Lints (Default Features)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -107,3 +155,47 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+  clippy-ipcon:
+    name: Clippy Lints (IPCON Feature)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libpixman-1-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libdrm-dev \
+            libgbm-dev \
+            libinput-dev \
+            libudev-dev
+
+      - name: Download and install libipcon
+        run: |
+          PACKAGE_VERSION="${LIBIPCON_VERSION#v}"
+          wget https://github.com/saimizi/libipcon/releases/download/$LIBIPCON_VERSION/libipcon_${PACKAGE_VERSION}_amd64.deb
+          sudo dpkg -i libipcon_${PACKAGE_VERSION}_amd64.deb || true
+          sudo apt-get install -f -y
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          # Use different cache key for ipcon feature
+          key: ipcon-clippy
+
+      - name: Run clippy with IPCON feature
+        run: cargo clippy --workspace --all-targets --features enable-ipcon -- -D warnings
