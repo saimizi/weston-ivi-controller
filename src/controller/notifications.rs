@@ -159,7 +159,7 @@ impl NotificationManager {
         let mut callbacks = self.callbacks.lock().unwrap();
         callbacks
             .entry(notification_type)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(callback);
     }
 

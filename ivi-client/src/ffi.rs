@@ -91,9 +91,7 @@ impl From<IviErrorCode> for IviError {
             IviErrorCode::Deserialization => {
                 IviError::DeserializationError("Deserialization error".to_string())
             }
-            IviErrorCode::Io => {
-                IviError::IoError(std::io::Error::new(std::io::ErrorKind::Other, "I/O error"))
-            }
+            IviErrorCode::Io => IviError::IoError(std::io::Error::other("I/O error")),
             IviErrorCode::InvalidParam => IviError::IoError(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "Invalid parameter",
@@ -295,8 +293,7 @@ pub unsafe extern "C" fn ivi_list_surfaces(
 
     match client.list_surfaces() {
         Ok(surface_list) => {
-            let ivi_surfaces: Vec<IviSurface> =
-                surface_list.into_iter().map(|s| s.into()).collect();
+            let ivi_surfaces: Vec<IviSurface> = surface_list.into_iter().collect();
             let boxed_slice = ivi_surfaces.into_boxed_slice();
             *count = boxed_slice.len();
             *surfaces = Box::into_raw(boxed_slice) as *mut IviSurface;
@@ -337,7 +334,7 @@ pub unsafe extern "C" fn ivi_get_surface(
 
     match client.get_surface(id) {
         Ok(surf) => {
-            *surface = surf.into();
+            *surface = surf;
             IviErrorCode::Ok
         }
         Err(err) => {
@@ -560,7 +557,7 @@ pub unsafe extern "C" fn ivi_list_layers(
 
     match client.list_layers() {
         Ok(layer_list) => {
-            let ivi_layers: Vec<IviLayer> = layer_list.into_iter().map(|l| l.into()).collect();
+            let ivi_layers: Vec<IviLayer> = layer_list.into_iter().collect();
             let boxed_slice = ivi_layers.into_boxed_slice();
             *count = boxed_slice.len();
             *layers = Box::into_raw(boxed_slice) as *mut IviLayer;
@@ -601,7 +598,7 @@ pub unsafe extern "C" fn ivi_get_layer(
 
     match client.get_layer(id) {
         Ok(lyr) => {
-            *layer = lyr.into();
+            *layer = lyr;
             IviErrorCode::Ok
         }
         Err(err) => {

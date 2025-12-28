@@ -274,8 +274,10 @@ pub unsafe extern "C" fn compositor_destroy_handler(
 /// # Returns
 /// * 0 on success
 /// * -1 on failure
+/// # Safety
+/// This function is unsafe because it interacts with C FFI and dereferences raw pointers
 #[no_mangle]
-pub extern "C" fn wet_module_init(
+pub unsafe extern "C" fn wet_module_init(
     compositor: *mut c_void,
     argc: c_int,
     argv: *const *const c_char,
@@ -289,7 +291,7 @@ pub extern "C" fn wet_module_init(
         .build();
 
     // Catch panics to prevent unwinding across FFI boundary
-    let result = panic::catch_unwind(|| unsafe {
+    let result = panic::catch_unwind(|| {
         plugin_init_impl(compositor as *mut ffi::weston_compositor, argc, argv)
     });
 
@@ -313,20 +315,18 @@ pub extern "C" fn wet_module_init(
                 ptr
             };
 
-            unsafe {
-                let success = ffi::weston_compositor_add_destroy_listener_once(
-                    compositor_ptr,
-                    listener_ptr,
-                    compositor_destroy_handler,
-                );
+            let success = ffi::weston_compositor_add_destroy_listener_once(
+                compositor_ptr,
+                listener_ptr,
+                compositor_destroy_handler,
+            );
 
-                if !success {
-                    jerror!("Failed to register compositor destroy listener");
-                    // Clean up on failure
-                    PLUGIN_STATE.lock().unwrap().take();
-                    libc::free(listener_ptr as *mut libc::c_void);
-                    return -1;
-                }
+            if !success {
+                jerror!("Failed to register compositor destroy listener");
+                // Clean up on failure
+                PLUGIN_STATE.lock().unwrap().take();
+                libc::free(listener_ptr as *mut libc::c_void);
+                return -1;
             }
 
             // The listener is now managed by the compositor and freed in the destroy handler.
@@ -850,7 +850,10 @@ mod tests {
 
     #[test]
     fn test_plugin_config_validation_invalid_max_connections() {
-        let mut config = PluginConfig::default();
+        let mut config = PluginConfig {
+            max_connections: 10,
+            ..Default::default()
+        };
         config.max_connections = 0;
         assert!(config.validate().is_err());
 
@@ -889,7 +892,7 @@ mod tests {
             let id_start_arg = CString::new("--id-start=0x20000000").unwrap();
             let id_max_arg = CString::new("--id-max=0x30000000").unwrap();
 
-            let args = vec![
+            let args = [
                 socket_path_arg.as_ptr(),
                 max_conn_arg.as_ptr(),
                 id_start_arg.as_ptr(),

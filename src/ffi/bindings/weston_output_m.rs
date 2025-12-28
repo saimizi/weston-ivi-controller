@@ -120,6 +120,10 @@ impl WestonOutput {
     }
 
     pub fn scale(&self) -> i32 {
+        unsafe { (*self.handle).scale }
+    }
+
+    pub fn current_scale(&self) -> i32 {
         unsafe { (*self.handle).current_scale }
     }
 

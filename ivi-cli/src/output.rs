@@ -816,6 +816,8 @@ pub fn format_commit_success() -> String {
     format_success("Changes committed")
 }
 
+type HierarchicalScene = Vec<(IviScreen, Vec<(IviLayer, Vec<IviSurface>)>)>;
+
 /// Format hierarchical scene showing screens -> layers -> surfaces
 ///
 /// # Arguments
@@ -823,9 +825,7 @@ pub fn format_commit_success() -> String {
 ///
 /// # Returns
 /// A formatted string with tree structure and indentation
-pub fn format_hierarchical_scene(
-    hierarchy: &[(IviScreen, Vec<(IviLayer, Vec<IviSurface>)>)],
-) -> String {
+pub fn format_hierarchical_scene(hierarchy: &HierarchicalScene) -> String {
     if hierarchy.is_empty() {
         return "No screens available".to_string();
     }
@@ -836,7 +836,7 @@ pub fn format_hierarchical_scene(
     let surface_indent = " ".repeat(18);
     let surface_prop_indent = " ".repeat(22);
 
-    for (_screen_idx, (screen, layers)) in hierarchy.iter().enumerate() {
+    for (screen, layers) in hierarchy.iter() {
         // Screen header
         output.push_str(&format!("Screen: {}\n", screen.name));
 
@@ -853,7 +853,7 @@ pub fn format_hierarchical_scene(
         if layers.is_empty() {
             output.push_str(&format!("{}No layers assigned\n", layer_indent));
         } else {
-            for (_layer_idx, (layer, surfaces)) in layers.iter().enumerate() {
+            for (layer, surfaces) in layers.iter() {
                 //output.push('\n');
 
                 // Layer header (2-space indent)
@@ -884,7 +884,7 @@ pub fn format_hierarchical_scene(
                 if surfaces.is_empty() {
                     output.push_str(&format!("{}No surfaces assigned\n", surface_indent));
                 } else {
-                    for (_surface_idx, surface) in surfaces.iter().enumerate() {
+                    for surface in surfaces.iter() {
                         //output.push('\n');
 
                         // Surface header (6-space indent)

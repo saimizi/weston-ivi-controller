@@ -359,8 +359,9 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
+    type IviMessage = (ClientId, Vec<u8>);
     struct TestHandler {
-        messages: Arc<Mutex<Vec<(ClientId, Vec<u8>)>>>,
+        messages: Arc<Mutex<Vec<IviMessage>>>,
         disconnects: Arc<Mutex<Vec<ClientId>>>,
     }
 
