@@ -218,7 +218,7 @@ impl StateManager {
 
             let visibility = surface.visibility();
             let opacity = surface.opacity();
-            let orientation = surface.orientation().into();
+            let orientation = surface.orientation();
 
             // Restore auto-assignment information if available
             let (is_auto_assigned, original_id) = existing_auto_info
@@ -295,7 +295,7 @@ impl StateManager {
 
             let visibility = surface.visibility();
             let opacity = surface.opacity();
-            let orientation = surface.orientation().into();
+            let orientation = surface.orientation();
 
             let state = SurfaceState {
                 id: surface_id,
@@ -379,7 +379,7 @@ impl StateManager {
 
             let visibility = surface.visibility();
             let opacity = surface.opacity();
-            let orientation = surface.orientation().into();
+            let orientation = surface.orientation();
 
             // Preserve existing z_order, auto-assignment info, and original ID
             let (z_order, is_auto_assigned, original_id) = if let Some(ref old) = old_state {
@@ -478,7 +478,7 @@ impl StateManager {
         new: &SurfaceState,
         event_mask: u32,
     ) {
-        let has = |bit: u32| (event_mask & (bit as u32)) != 0;
+        let has = |bit: u32| (event_mask & bit) != 0;
         if let Ok(notification_manager) = self.notification_manager.lock() {
             // Geometry
             if has(NotificationMask::Position.into())
@@ -507,32 +507,28 @@ impl StateManager {
             }
 
             // Visibility
-            if has(NotificationMask::Visibility.into()) {
-                if old.visibility != new.visibility {
-                    notification_manager.emit_visibility_change(
-                        surface_id,
-                        old.visibility,
-                        new.visibility,
-                    );
-                }
+            if has(NotificationMask::Visibility.into()) && old.visibility != new.visibility {
+                notification_manager.emit_visibility_change(
+                    surface_id,
+                    old.visibility,
+                    new.visibility,
+                );
             }
 
             // Opacity
-            if has(NotificationMask::Opacity.into()) {
-                if (old.opacity - new.opacity).abs() > f32::EPSILON {
-                    notification_manager.emit_opacity_change(surface_id, old.opacity, new.opacity);
-                }
+            if has(NotificationMask::Opacity.into())
+                && (old.opacity - new.opacity).abs() > f32::EPSILON
+            {
+                notification_manager.emit_opacity_change(surface_id, old.opacity, new.opacity);
             }
 
             // Orientation
-            if has(NotificationMask::Orientation.into()) {
-                if old.orientation != new.orientation {
-                    notification_manager.emit_orientation_change(
-                        surface_id,
-                        old.orientation,
-                        new.orientation,
-                    );
-                }
+            if has(NotificationMask::Orientation.into()) && old.orientation != new.orientation {
+                notification_manager.emit_orientation_change(
+                    surface_id,
+                    old.orientation,
+                    new.orientation,
+                );
             }
         }
     }
@@ -651,24 +647,16 @@ impl StateManager {
                 // Bit definitions from ivi_layout_notification_mask
                 const NOTIF_OPACITY: u32 = 1 << 1;
                 const NOTIF_VISIBILITY: u32 = 1 << 7;
-                let has = |bit: u32| (event_mask & (bit as u32)) != 0;
+                let has = |bit: u32| (event_mask & bit) != 0;
 
-                if has(NOTIF_VISIBILITY) {
-                    if old.visibility != new_state.visibility {
-                        let nm = self.notification_manager.lock().unwrap();
-                        nm.emit_layer_visibility_change(
-                            layer_id,
-                            old.visibility,
-                            new_state.visibility,
-                        );
-                    }
+                if has(NOTIF_VISIBILITY) && old.visibility != new_state.visibility {
+                    let nm = self.notification_manager.lock().unwrap();
+                    nm.emit_layer_visibility_change(layer_id, old.visibility, new_state.visibility);
                 }
 
-                if has(NOTIF_OPACITY) {
-                    if (old.opacity - new_state.opacity).abs() > f32::EPSILON {
-                        let nm = self.notification_manager.lock().unwrap();
-                        nm.emit_layer_opacity_change(layer_id, old.opacity, new_state.opacity);
-                    }
+                if has(NOTIF_OPACITY) && (old.opacity - new_state.opacity).abs() > f32::EPSILON {
+                    let nm = self.notification_manager.lock().unwrap();
+                    nm.emit_layer_opacity_change(layer_id, old.opacity, new_state.opacity);
                 }
             }
 
@@ -685,7 +673,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     fn make_state_manager() -> StateManager {
-        let ivi_api = { Arc::new(IviLayoutApi::from_raw(1 as *const _).unwrap()) };
+        let ivi_api = { Arc::new(IviLayoutApi::from_raw(std::ptr::dangling()).unwrap()) };
         StateManager::new(ivi_api)
     }
 
@@ -796,7 +784,7 @@ mod tests {
         // Emit z-order change
         nm_arc.lock().unwrap().emit_z_order_change(7, 1, 5);
 
-        let got = flag.lock().unwrap().clone();
+        let got = *flag.lock().unwrap();
         assert_eq!(got, Some((1, 5)));
     }
 

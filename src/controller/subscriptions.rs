@@ -111,7 +111,7 @@ impl SubscriptionManager {
     ) -> Result<Vec<EventType>, String> {
         let mut subs = self.subscriptions.lock().unwrap();
 
-        if let Some(client_sub) = subs.get_mut(&client_id) {
+        if let Some(client_sub) = subs.get_mut(client_id) {
             client_sub.unsubscribe(event_types.clone());
             jinfo!("Client {} unsubscribed from {:?}", client_id, event_types);
             Ok(event_types)
@@ -123,7 +123,7 @@ impl SubscriptionManager {
     /// Get a client's current subscriptions
     pub fn get_subscriptions(&self, client_id: &ClientId) -> Vec<EventType> {
         let subs = self.subscriptions.lock().unwrap();
-        subs.get(&client_id)
+        subs.get(client_id)
             .map(|client_sub| client_sub.get_subscriptions())
             .unwrap_or_default()
     }
@@ -154,7 +154,7 @@ impl SubscriptionManager {
     /// Drain all pending notifications for a client
     pub fn drain_notifications(&self, client_id: &ClientId) -> Vec<RpcNotification> {
         let mut subs = self.subscriptions.lock().unwrap();
-        subs.get_mut(&client_id)
+        subs.get_mut(client_id)
             .map(|client_sub| client_sub.drain_notifications())
             .unwrap_or_default()
     }
@@ -162,7 +162,7 @@ impl SubscriptionManager {
     /// Remove a client (called on disconnect)
     pub fn remove_client(&self, client_id: &ClientId) {
         let mut subs = self.subscriptions.lock().unwrap();
-        if subs.remove(&client_id).is_some() {
+        if subs.remove(client_id).is_some() {
             jinfo!(
                 "Removed subscriptions for disconnected client {}",
                 client_id

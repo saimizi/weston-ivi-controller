@@ -258,7 +258,7 @@ impl std::error::Error for ValidationError {}
 
 /// Validate opacity value is in range [0.0, 1.0]
 fn validate_opacity(opacity: f32) -> Result<(), ValidationError> {
-    if opacity < 0.0 || opacity > 1.0 {
+    if !(0.0..=1.0).contains(&opacity) {
         Err(ValidationError {
             message: format!("Opacity must be between 0.0 and 1.0, got: {}", opacity),
         })

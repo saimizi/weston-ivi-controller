@@ -1794,7 +1794,7 @@ impl HealthMonitor {
         }
 
         // Ensure score is in valid range
-        score = score.max(0.0).min(100.0);
+        score = score.clamp(0.0, 100.0);
 
         self.last_health_score = score;
         self.last_health_check = now;
@@ -2400,7 +2400,7 @@ impl IdAssignmentManager {
             }
 
             // Use sequential assignment with priority
-            self.assign_next_id_with_sequential_priority(&mut *assigner, &*registry)?
+            self.assign_next_id_with_sequential_priority(&mut assigner, &registry)?
         };
 
         // Register the assigned ID in the registry with timeout-aware locking
@@ -2669,7 +2669,7 @@ impl IdAssignmentManager {
                 return Err(IdAssignmentError::timeout_error(timeout.as_millis() as u64));
             }
 
-            assigner.assign_next_id(&*registry)?
+            assigner.assign_next_id(&registry)?
         };
 
         // Register the assigned ID in the registry with timeout-aware locking
@@ -3273,7 +3273,7 @@ impl IdAssignmentManager {
                 );
 
                 // Attempt recovery by trying to get the surface with the new ID
-                if let Some(_) = self.ivi_api.get_surface_from_id(new_id) {
+                if self.ivi_api.get_surface_from_id(new_id).is_some() {
                     tracing::warn!(
                         original_id = original_id,
                         new_id = new_id,
@@ -4666,15 +4666,13 @@ fn test_replacement_verification_logic() {
 #[test]
 fn test_recovery_backoff_calculation() {
     // Test the exponential backoff calculation used in recovery
-    let backoff_1 = 10_u64.pow(1.min(3)); // 10ms
-    let backoff_2 = 10_u64.pow(2.min(3)); // 100ms
-    let backoff_3 = 10_u64.pow(3.min(3)); // 1000ms
-    let backoff_4 = 10_u64.pow(4.min(3)); // Still 1000ms (capped)
+    let backoff_1 = 10_u64.pow(1); // 10ms
+    let backoff_2 = 10_u64.pow(2); // 100ms
+    let backoff_3 = 10_u64.pow(3); // 1000ms
 
     assert_eq!(backoff_1, 10);
     assert_eq!(backoff_2, 100);
     assert_eq!(backoff_3, 1000);
-    assert_eq!(backoff_4, 1000); // Capped at 1000ms
 }
 
 // Temporarily disabled integration tests due to mock IVI API issues

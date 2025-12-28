@@ -40,7 +40,7 @@ impl IviLayer {
     pub fn visibility(&self) -> bool {
         self.api
             .get_properties_of_layer(self)
-            .map_or(false, |p| p.visibility())
+            .is_some_and(|p| p.visibility())
     }
 
     /// Get layer event mask (what changed)

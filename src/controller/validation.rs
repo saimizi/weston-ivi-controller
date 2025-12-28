@@ -35,7 +35,7 @@ pub fn validate_position(x: i32, y: i32) -> Result<(), ValidationError> {
     const MIN_COORD: i32 = i32::MIN / 2;
     const MAX_COORD: i32 = i32::MAX / 2;
 
-    if x < MIN_COORD || x > MAX_COORD {
+    if !(MIN_COORD..=MAX_COORD).contains(&x) {
         return Err(ValidationError::InvalidPosition {
             param: "x".to_string(),
             value: x.to_string(),
@@ -43,7 +43,7 @@ pub fn validate_position(x: i32, y: i32) -> Result<(), ValidationError> {
         });
     }
 
-    if y < MIN_COORD || y > MAX_COORD {
+    if !(MIN_COORD..=MAX_COORD).contains(&y) {
         return Err(ValidationError::InvalidPosition {
             param: "y".to_string(),
             value: y.to_string(),
@@ -81,7 +81,7 @@ pub fn validate_size(width: i32, height: i32) -> Result<(), ValidationError> {
 /// - 0.0 = fully transparent
 /// - 1.0 = fully opaque
 pub fn validate_opacity(opacity: f32) -> Result<(), ValidationError> {
-    if opacity < 0.0 || opacity > 1.0 || opacity.is_nan() {
+    if !(0.0..=1.0).contains(&opacity) || opacity.is_nan() {
         return Err(ValidationError::InvalidOpacity { value: opacity });
     }
 

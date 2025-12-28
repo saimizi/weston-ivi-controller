@@ -132,6 +132,8 @@ impl EventContext {
     }
 
     /// Register a per-surface property change listener by surface id
+    /// # Safety
+    /// This function is unsafe because it deals with raw pointers.
     pub unsafe fn register_surface_property_listener_by_id(
         &self,
         surface_id: u32,
@@ -174,6 +176,8 @@ impl EventContext {
     }
 
     /// Remove and free a per-surface property listener by surface id
+    /// # Safety
+    /// This function is unsafe because it frees raw pointers.
     pub unsafe fn remove_surface_property_listener(&self, surface_id: u32) {
         if let Some(listener) = self
             .surface_prop_listeners
@@ -190,6 +194,8 @@ impl EventContext {
     }
 
     /// Clear all per-surface property listeners
+    /// # Safety
+    /// This function is unsafe because it frees raw pointers.
     pub unsafe fn clear_property_listeners(&self) {
         let mut map = self.surface_prop_listeners.lock().unwrap();
         for (_, listener) in map.drain() {
@@ -202,6 +208,8 @@ impl EventContext {
     }
 
     /// Register a per-layer property change listener by layer id
+    /// # Safety
+    /// This function is unsafe because it deals with raw pointers.
     pub unsafe fn register_layer_property_listener_by_id(
         &self,
         layer_id: u32,
@@ -242,6 +250,8 @@ impl EventContext {
     }
 
     /// Remove and free a per-layer property listener by layer id
+    /// # Safety
+    /// This function is unsafe because it frees raw pointers.
     pub unsafe fn remove_layer_property_listener(&self, layer_id: u32) {
         if let Some(listener) = self.layer_prop_listeners.lock().unwrap().remove(&layer_id) {
             LISTENER_CONTEXTS
@@ -253,6 +263,8 @@ impl EventContext {
     }
 
     /// Clear all per-layer property listeners
+    /// # Safety
+    /// This function is unsafe because it frees raw pointers.
     pub unsafe fn clear_layer_property_listeners(&self) {
         let mut map = self.layer_prop_listeners.lock().unwrap();
         for (_, listener) in map.drain() {
@@ -340,6 +352,8 @@ lazy_static::lazy_static! {
 }
 
 /// C callback for surface creation events
+/// # Safety
+/// This function is unsafe because it is called from C code with raw pointers.
 #[no_mangle]
 pub unsafe extern "C" fn surface_created_callback(listener: *mut wl_listener, data: *mut c_void) {
     if listener.is_null() || data.is_null() {
@@ -429,6 +443,8 @@ pub unsafe extern "C" fn surface_created_callback(listener: *mut wl_listener, da
 }
 
 /// C callback for surface removal events
+/// # Safety
+/// This function is unsafe because it is called from C code with raw pointers.
 #[no_mangle]
 pub unsafe extern "C" fn surface_removed_callback(listener: *mut wl_listener, data: *mut c_void) {
     if listener.is_null() || data.is_null() {
@@ -487,6 +503,8 @@ pub unsafe extern "C" fn surface_removed_callback(listener: *mut wl_listener, da
 }
 
 /// C callback for surface configuration events
+/// # Safety
+/// This function is unsafe because it is called from C code with raw pointers.
 #[no_mangle]
 pub unsafe extern "C" fn surface_configured_callback(
     listener: *mut wl_listener,
@@ -515,6 +533,8 @@ pub unsafe extern "C" fn surface_configured_callback(
 }
 
 /// C callback for per-surface property change events
+/// # Safety
+/// This function is unsafe because it is called from C code with raw pointers.
 #[no_mangle]
 pub unsafe extern "C" fn surface_property_changed_callback(
     listener: *mut wl_listener,
@@ -544,6 +564,8 @@ pub unsafe extern "C" fn surface_property_changed_callback(
 }
 
 /// C callback for layer creation events
+/// # Safety
+/// This function is unsafe because it is called from C code with raw pointers.
 #[no_mangle]
 pub unsafe extern "C" fn layer_created_callback(listener: *mut wl_listener, data: *mut c_void) {
     if listener.is_null() || data.is_null() {
@@ -574,6 +596,8 @@ pub unsafe extern "C" fn layer_created_callback(listener: *mut wl_listener, data
 
 /// C callback for layer removal events
 #[no_mangle]
+/// # Safety
+/// This function is unsafe because it is called from C code with raw pointers.
 pub unsafe extern "C" fn layer_removed_callback(listener: *mut wl_listener, data: *mut c_void) {
     if listener.is_null() || data.is_null() {
         return;
@@ -600,6 +624,8 @@ pub unsafe extern "C" fn layer_removed_callback(listener: *mut wl_listener, data
 
 /// C callback for per-layer property change events
 #[no_mangle]
+/// # Safety
+/// This function is unsafe because it is called from C code with raw pointers.
 pub unsafe extern "C" fn layer_property_changed_callback(
     listener: *mut wl_listener,
     data: *mut c_void,

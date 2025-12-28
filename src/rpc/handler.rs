@@ -295,7 +295,7 @@ impl RpcHandler {
         let surfaces = state_manager.get_all_surfaces();
 
         let surface_list: Vec<serde_json::Value> =
-            surfaces.iter().map(|s| surface_state_to_json(s)).collect();
+            surfaces.iter().map(surface_state_to_json).collect();
 
         Ok(json!({ "surfaces": surface_list }))
     }
@@ -399,7 +399,7 @@ impl RpcHandler {
                 width,
                 height,
             })
-            .map_err(|e| RpcError::internal_error(e))?;
+            .map_err(RpcError::internal_error)?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
@@ -444,7 +444,7 @@ impl RpcHandler {
                 width,
                 height,
             })
-            .map_err(|e| RpcError::internal_error(e))?;
+            .map_err(RpcError::internal_error)?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
@@ -467,7 +467,7 @@ impl RpcHandler {
 
         surface
             .set_visibility(visible)
-            .map_err(|e| RpcError::internal_error(e))?;
+            .map_err(RpcError::internal_error)?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
@@ -494,7 +494,7 @@ impl RpcHandler {
 
         surface
             .set_opacity(opacity)
-            .map_err(|e| RpcError::internal_error(e))?;
+            .map_err(RpcError::internal_error)?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
@@ -521,7 +521,7 @@ impl RpcHandler {
 
         surface
             .set_z_order(z_order, 0, 1000)
-            .map_err(|e| RpcError::internal_error(e))?;
+            .map_err(RpcError::internal_error)?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
@@ -573,10 +573,10 @@ impl RpcHandler {
         // Set both keyboard and pointer focus
         surface
             .set_keyboard_focus()
-            .map_err(|e| RpcError::internal_error(e))?;
+            .map_err(RpcError::internal_error)?;
         surface
             .set_pointer_focus()
-            .map_err(|e| RpcError::internal_error(e))?;
+            .map_err(RpcError::internal_error)?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
@@ -626,8 +626,8 @@ impl RpcHandler {
 
         let subscription_manager = self.subscription_manager.lock().unwrap();
         let subscribed = subscription_manager
-            .subscribe(&client_id, event_types)
-            .map_err(|e| RpcError::internal_error(e))?;
+            .subscribe(client_id, event_types)
+            .map_err(RpcError::internal_error)?;
 
         jinfo!(
             "Client {} successfully subscribed to {} event types",
@@ -655,8 +655,8 @@ impl RpcHandler {
 
         let subscription_manager = self.subscription_manager.lock().unwrap();
         let unsubscribed = subscription_manager
-            .unsubscribe(&client_id, event_types)
-            .map_err(|e| RpcError::internal_error(e))?;
+            .unsubscribe(client_id, event_types)
+            .map_err(RpcError::internal_error)?;
 
         jinfo!(
             "Client {} successfully unsubscribed from {} event types",
@@ -678,7 +678,7 @@ impl RpcHandler {
         jdebug!("Listing subscriptions for client {}", client_id);
 
         let subscription_manager = self.subscription_manager.lock().unwrap();
-        let subscriptions = subscription_manager.get_subscriptions(&client_id);
+        let subscriptions = subscription_manager.get_subscriptions(client_id);
 
         jdebug!(
             "Client {} has {} active subscriptions",
@@ -863,7 +863,7 @@ impl RpcHandler {
                 width,
                 height,
             })
-            .map_err(|e| RpcError::internal_error(e))?;
+            .map_err(RpcError::internal_error)?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
@@ -898,7 +898,7 @@ impl RpcHandler {
                 width,
                 height,
             })
-            .map_err(|e| RpcError::internal_error(e))?;
+            .map_err(RpcError::internal_error)?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
@@ -940,7 +940,7 @@ impl RpcHandler {
 
         layer
             .set_visibility(visible)
-            .map_err(|e| RpcError::internal_error(e))?;
+            .map_err(RpcError::internal_error)?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
@@ -992,7 +992,7 @@ impl RpcHandler {
 
         layer
             .set_opacity(opacity)
-            .map_err(|e| RpcError::internal_error(e))?;
+            .map_err(RpcError::internal_error)?;
 
         // Commit changes only if auto_commit is true
         if auto_commit {
@@ -1235,9 +1235,9 @@ impl RpcHandler {
         let screens = ivi_api.get_screens();
         let screen_infos: Vec<serde_json::Value> = screens
             .iter()
-            .filter_map(|output| {
+            .map(|output| {
                 let info = ScreenInfo::from(output.clone());
-                Some(json!({
+                json!({
                     "name": info.name,
                     "width": info.width,
                     "height": info.height,
@@ -1246,7 +1246,7 @@ impl RpcHandler {
                     "transform": info.transform.to_string(),
                     "enabled": info.enabled,
                     "scale": info.scale,
-                }))
+                })
             })
             .collect();
 
@@ -1293,10 +1293,12 @@ impl RpcHandler {
                 RpcError::internal_error(format!("Screen '{}' not found", screen_name))
             })?;
 
-        let layers = ivi_api
-            .get_layers_on_screen((*screen).clone().into())
-            .map_err(|e| RpcError::internal_error(format!("Failed to get layers: {}", e)))?;
-
+        let layers;
+        unsafe {
+            layers = ivi_api
+                .get_layers_on_screen((*screen).clone().into())
+                .map_err(|e| RpcError::internal_error(format!("Failed to get layers: {}", e)))?;
+        }
         let layer_ids: Vec<u32> = layers.iter().map(|layer| layer.id()).collect();
 
         Ok(json!({ "layer_ids": layer_ids }))
@@ -1581,7 +1583,7 @@ mod tests {
         let ivi_api = {
             // For testing, we create a dummy API pointer
             // This is safe because our tests don't actually call IVI functions
-            Arc::new(IviLayoutApi::from_raw(1 as *const _).unwrap())
+            Arc::new(IviLayoutApi::from_raw(std::ptr::dangling()).unwrap())
         };
         Arc::new(Mutex::new(StateManager::new(ivi_api)))
     }

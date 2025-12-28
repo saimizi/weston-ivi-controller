@@ -105,8 +105,5 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Run clippy (warnings only, not errors)
-        run: cargo clippy --workspace --all-targets -- -A clippy::not_unsafe_ptr_arg_deref
-        env:
-          # Override RUSTFLAGS to not treat warnings as errors
-          RUSTFLAGS: ""
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings

@@ -1172,7 +1172,7 @@ impl IviClient {
             .map_err(|e| IviError::SerializationError(e.to_string()))?;
 
         // Send request using shared framing module
-        write_frame(&mut self.socket, &request_json).map_err(|e| IviError::IoError(e))?;
+        write_frame(&mut self.socket, &request_json).map_err(IviError::IoError)?;
 
         // Read response using shared framing module
         let response_buf = loop {

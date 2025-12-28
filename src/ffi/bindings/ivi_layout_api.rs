@@ -68,7 +68,7 @@ impl IviLayoutApi {
         }
     }
 
-    /// Rebuild view list without applaying any new changes
+    /// Rebuild view list without applying any new changes
     pub fn commit_current(&self) -> Result<(), &'static str> {
         unsafe {
             if self.api.is_null() {
@@ -89,79 +89,79 @@ impl IviLayoutApi {
     }
 
     /// Add a listener for notification when ivi surface is created
-    pub fn add_listener_create_surface(
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn add_listener_create_surface(
         &self,
         listener: *mut wl_listener,
     ) -> Result<(), &'static str> {
-        unsafe {
-            if self.api.is_null() {
-                return Err("IVI API pointer is null");
-            }
-
-            let add_listener_create_surface_fn = (*self.api)
-                .add_listener_create_surface
-                .ok_or("add_surface_created_listener function is null")?;
-            add_listener_create_surface_fn(listener);
-
-            Ok(())
+        if self.api.is_null() {
+            return Err("IVI API pointer is null");
         }
+
+        let add_listener_create_surface_fn = (*self.api)
+            .add_listener_create_surface
+            .ok_or("add_surface_created_listener function is null")?;
+        add_listener_create_surface_fn(listener);
+
+        Ok(())
     }
 
     /// Add a listener for notification when ivi surface is removed
-    pub fn add_listener_remove_surface(
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn add_listener_remove_surface(
         &self,
         listener: *mut wl_listener,
     ) -> Result<(), &'static str> {
-        unsafe {
-            if self.api.is_null() {
-                return Err("IVI API pointer is null");
-            }
-
-            let add_listener_remove_surface_fn = (*self.api)
-                .add_listener_remove_surface
-                .ok_or("add_surface_created_listener function is null")?;
-            add_listener_remove_surface_fn(listener);
-
-            Ok(())
+        if self.api.is_null() {
+            return Err("IVI API pointer is null");
         }
+
+        let add_listener_remove_surface_fn = (*self.api)
+            .add_listener_remove_surface
+            .ok_or("add_surface_created_listener function is null")?;
+        add_listener_remove_surface_fn(listener);
+
+        Ok(())
     }
 
     /// Add a listener of notification when ivi surface is configured
-    pub fn add_listener_configure_surface(
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn add_listener_configure_surface(
         &self,
         listener: *mut wl_listener,
     ) -> Result<(), &'static str> {
-        unsafe {
-            if self.api.is_null() {
-                return Err("IVI API pointer is null");
-            }
-
-            let add_listener_configure_surface_fn = (*self.api)
-                .add_listener_configure_surface
-                .ok_or("add_listener_configure_surface function is null")?;
-            add_listener_configure_surface_fn(listener);
-
-            Ok(())
+        if self.api.is_null() {
+            return Err("IVI API pointer is null");
         }
+
+        let add_listener_configure_surface_fn = (*self.api)
+            .add_listener_configure_surface
+            .ok_or("add_listener_configure_surface function is null")?;
+        add_listener_configure_surface_fn(listener);
+
+        Ok(())
     }
 
     /// Add listener for notification when desktop surface is configured
-    pub fn add_listener_configure_desktop_surface(
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn add_listener_configure_desktop_surface(
         &self,
         listener: *mut wl_listener,
     ) -> Result<(), &'static str> {
-        unsafe {
-            if self.api.is_null() {
-                return Err("IVI API pointer is null");
-            }
-
-            let add_listener_configure_desktop_surface_fn = (*self.api)
-                .add_listener_configure_desktop_surface
-                .ok_or("add_listener_configure_desktop_surface function is null")?;
-            add_listener_configure_desktop_surface_fn(listener);
-
-            Ok(())
+        if self.api.is_null() {
+            return Err("IVI API pointer is null");
         }
+
+        let add_listener_configure_desktop_surface_fn = (*self.api)
+            .add_listener_configure_desktop_surface
+            .ok_or("add_listener_configure_desktop_surface function is null")?;
+        add_listener_configure_desktop_surface_fn(listener);
+
+        Ok(())
     }
 
     /// Get all ivi surfaces which are currently registered and managed
@@ -343,8 +343,10 @@ impl IviLayoutApi {
         Ok(())
     }
 
-    /// Add a lisener for notification when surface properties are changed
-    pub fn surface_add_listener(
+    /// Add a listener for notification when surface properties are changed
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn surface_add_listener(
         &self,
         surface: &IviSurface,
         listener: *mut wl_listener,
@@ -434,41 +436,41 @@ impl IviLayoutApi {
     }
 
     /// Add a listener for notification when layer is created
-    pub fn add_listener_create_layer(
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn add_listener_create_layer(
         &self,
         listener: *mut wl_listener,
     ) -> Result<(), &'static str> {
-        unsafe {
-            if self.api.is_null() {
-                return Err("IVI API pointer is null");
-            }
-
-            let add_listener_create_layer_fn = (*self.api)
-                .add_listener_create_layer
-                .ok_or("add_listener_create_layer function is null")?;
-            add_listener_create_layer_fn(listener);
-
-            Ok(())
+        if self.api.is_null() {
+            return Err("IVI API pointer is null");
         }
+
+        let add_listener_create_layer_fn = (*self.api)
+            .add_listener_create_layer
+            .ok_or("add_listener_create_layer function is null")?;
+        add_listener_create_layer_fn(listener);
+
+        Ok(())
     }
 
     /// Add a listener for notification when layer is removed
-    pub fn add_listener_remove_layer(
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn add_listener_remove_layer(
         &self,
         listener: *mut wl_listener,
     ) -> Result<(), &'static str> {
-        unsafe {
-            if self.api.is_null() {
-                return Err("IVI API pointer is null");
-            }
-
-            let add_listener_remove_layer_fn = (*self.api)
-                .add_listener_remove_layer
-                .ok_or("add_listener_remove_layer function is null")?;
-            add_listener_remove_layer_fn(listener);
-
-            Ok(())
+        if self.api.is_null() {
+            return Err("IVI API pointer is null");
         }
+
+        let add_listener_remove_layer_fn = (*self.api)
+            .add_listener_remove_layer
+            .ok_or("add_listener_remove_layer function is null")?;
+        add_listener_remove_layer_fn(listener);
+
+        Ok(())
     }
 
     /// Create a ivi layer
@@ -609,39 +611,39 @@ impl IviLayoutApi {
     }
 
     /// Get all layers of the given weston output
-    pub fn get_layers_on_screen(
+    /// # Safety
+    /// output must be a valid pointer to weston_output
+    pub unsafe fn get_layers_on_screen(
         &self,
         output: *mut weston_output,
     ) -> Result<Vec<IviLayer>, &'static str> {
-        unsafe {
-            let get_layers_fn = (*self.api)
-                .get_layers_on_screen
-                .ok_or("get_layers_on_screen function is null")?;
+        let get_layers_fn = (*self.api)
+            .get_layers_on_screen
+            .ok_or("get_layers_on_screen function is null")?;
 
-            let mut length: i32 = 0;
-            let mut array: *mut *mut ivi_layout_layer = std::ptr::null_mut();
+        let mut length: i32 = 0;
+        let mut array: *mut *mut ivi_layout_layer = std::ptr::null_mut();
 
-            get_layers_fn(output, &mut length, &mut array);
+        get_layers_fn(output, &mut length, &mut array);
 
-            if array.is_null() || length <= 0 {
-                return Ok(Vec::new());
-            }
-
-            let api = Arc::new(Self {
-                api: self.api,
-                compositor: self.compositor,
-            });
-            let mut layers = Vec::new();
-
-            for i in 0..length as isize {
-                let handle = *array.offset(i);
-                if let Some(layer) = IviLayer::new(handle, api.clone()) {
-                    layers.push(layer);
-                }
-            }
-
-            Ok(layers)
+        if array.is_null() || length <= 0 {
+            return Ok(Vec::new());
         }
+
+        let api = Arc::new(Self {
+            api: self.api,
+            compositor: self.compositor,
+        });
+        let mut layers = Vec::new();
+
+        for i in 0..length as isize {
+            let handle = *array.offset(i);
+            if let Some(layer) = IviLayer::new(handle, api.clone()) {
+                layers.push(layer);
+            }
+        }
+
+        Ok(layers)
     }
 
     /// Set the visibility of a ivi layer
@@ -761,17 +763,17 @@ impl IviLayoutApi {
     }
 
     /// Add a listener to listen property changes of ivi layer when a property of the ivi layer is changed.
-    pub fn layer_add_listener(
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn layer_add_listener(
         &self,
         layer: &IviLayer,
         listener: *mut wl_listener,
     ) -> Result<(), &'static str> {
-        unsafe {
-            let add_listener_fn = (*self.api)
-                .layer_add_listener
-                .ok_or("layer_add_listener_properties_changed function is null")?;
-            add_listener_fn(layer.handle(), listener);
-        }
+        let add_listener_fn = (*self.api)
+            .layer_add_listener
+            .ok_or("layer_add_listener_properties_changed function is null")?;
+        add_listener_fn(layer.handle(), listener);
         Ok(())
     }
 
@@ -911,7 +913,10 @@ impl IviLayoutApi {
     }
 
     /// Surface content dumping for debugging
-    pub fn surface_dump(
+    /// # Safety
+    /// target must be a valid pointer to a memory area with size bytes allocated
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn surface_dump(
         &self,
         surface: &WestonSurface,
         target: *mut std::ffi::c_void,
@@ -921,18 +926,16 @@ impl IviLayoutApi {
         width: i32,
         height: i32,
     ) -> Result<i32, &'static str> {
-        unsafe {
-            let dump_fn = (*self.api)
-                .surface_dump
-                .ok_or("surface_dump function is null")?;
+        let dump_fn = (*self.api)
+            .surface_dump
+            .ok_or("surface_dump function is null")?;
 
-            let ret = dump_fn(surface.handle(), target, size, x, y, width, height);
+        let ret = dump_fn(surface.handle(), target, size, x, y, width, height);
 
-            if ret < 0 {
-                return Err("Failed to dump surface content");
-            }
-            Ok(ret)
+        if ret < 0 {
+            return Err("Failed to dump surface content");
         }
+        Ok(ret)
     }
 
     /// Return the ivi surface or None
@@ -966,99 +969,107 @@ impl IviLayoutApi {
     }
 
     /// Add a shell destroy listener only once.
-    pub fn shell_add_destroy_listener_once(
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn shell_add_destroy_listener_once(
         &self,
         listener: *mut wl_listener,
         destroy_handler: wl_notify_func_t,
     ) -> Result<(), &'static str> {
-        unsafe {
-            if self.api.is_null() {
-                return Err("IVI API pointer is null");
-            }
-
-            let add_destroy_listener_once_fn = (*self.api)
-                .shell_add_destroy_listener_once
-                .ok_or("shell_add_destroy_listener_once function is null")?;
-            add_destroy_listener_once_fn(listener, destroy_handler);
-
-            Ok(())
+        if self.api.is_null() {
+            return Err("IVI API pointer is null");
         }
+
+        let add_destroy_listener_once_fn = (*self.api)
+            .shell_add_destroy_listener_once
+            .ok_or("shell_add_destroy_listener_once function is null")?;
+        add_destroy_listener_once_fn(listener, destroy_handler);
+
+        Ok(())
     }
 
     /// Add a listener for notification when input panel surface is configured.
-    pub fn add_listener_configure_input_panel_surface(
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn add_listener_configure_input_panel_surface(
         &self,
         listener: *mut wl_listener,
     ) -> Result<(), &'static str> {
-        unsafe {
-            if self.api.is_null() {
-                return Err("IVI API pointer is null");
-            }
-
-            let add_listener_configure_input_panel_surface_fn = (*self.api)
-                .add_listener_configure_input_panel_surface
-                .ok_or("add_listener_configure_input_panel_surface function is null")?;
-            add_listener_configure_input_panel_surface_fn(listener);
-
-            Ok(())
+        if self.api.is_null() {
+            return Err("IVI API pointer is null");
         }
+
+        let add_listener_configure_input_panel_surface_fn = (*self.api)
+            .add_listener_configure_input_panel_surface
+            .ok_or("add_listener_configure_input_panel_surface function is null")?;
+        add_listener_configure_input_panel_surface_fn(listener);
+
+        Ok(())
     }
 
-    /// Add a listener for notification when an iput panel surface should be show
-    pub fn add_listener_show_input_panel(
+    /// Add a listener for notification when an input panel surface should be show
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn add_listener_show_input_panel(
         &self,
         listener: *mut wl_listener,
     ) -> Result<(), &'static str> {
-        unsafe {
-            if self.api.is_null() {
-                return Err("IVI API pointer is null");
-            }
-
-            let add_listener_show_input_panel_fn = (*self.api)
-                .add_listener_show_input_panel
-                .ok_or("add_listener_show_input_panel_surface function is null")?;
-            add_listener_show_input_panel_fn(listener);
-
-            Ok(())
+        if self.api.is_null() {
+            return Err("IVI API pointer is null");
         }
+
+        let add_listener_show_input_panel_fn = (*self.api)
+            .add_listener_show_input_panel
+            .ok_or("add_listener_show_input_panel_surface function is null")?;
+        add_listener_show_input_panel_fn(listener);
+
+        Ok(())
     }
 
     /// Add a listener for notification when an input panel panel surface should be hidden
-    pub fn add_listener_hide_input_panel(
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn add_listener_hide_input_panel(
         &self,
         listener: *mut wl_listener,
     ) -> Result<(), &'static str> {
-        unsafe {
-            if self.api.is_null() {
-                return Err("IVI API pointer is null");
-            }
-
-            let add_listener_hide_input_panel_fn = (*self.api)
-                .add_listener_hide_input_panel
-                .ok_or("add_listener_hide_input_panel_surface function is null")?;
-            add_listener_hide_input_panel_fn(listener);
-
-            Ok(())
+        if self.api.is_null() {
+            return Err("IVI API pointer is null");
         }
+
+        if listener.is_null() {
+            return Err("Listener pointer is null");
+        }
+
+        let add_listener_hide_input_panel_fn = (*self.api)
+            .add_listener_hide_input_panel
+            .ok_or("add_listener_hide_input_panel_surface function is null")?;
+        add_listener_hide_input_panel_fn(listener);
+
+        Ok(())
     }
 
     /// Add a listener for notification when an input panel surface should be updated.
-    pub fn add_listener_update_input_panel(
+    /// # Safety
+    /// listener must be a valid pointer to wl_listener
+    pub unsafe fn add_listener_update_input_panel(
         &self,
         listener: *mut wl_listener,
     ) -> Result<(), &'static str> {
-        unsafe {
-            if self.api.is_null() {
-                return Err("IVI API pointer is null");
-            }
-
-            let add_listener_update_input_panel_fn = (*self.api)
-                .add_listener_update_input_panel
-                .ok_or("add_listener_update_input_panel_surface function is null")?;
-            add_listener_update_input_panel_fn(listener);
-
-            Ok(())
+        if self.api.is_null() {
+            return Err("IVI API pointer is null");
         }
+
+        if listener.is_null() {
+            return Err("Listener pointer is null");
+        }
+
+        let add_listener_update_input_panel_fn = (*self.api)
+            .add_listener_update_input_panel
+            .ok_or("add_listener_update_input_panel_surface function is null")?;
+        add_listener_update_input_panel_fn(listener);
+
+        Ok(())
     }
 
     /// Get all screens (weston outputs) from the compositor

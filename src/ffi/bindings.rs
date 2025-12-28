@@ -196,7 +196,7 @@ impl Orientation {
         crate::controller::validation::validate_orientation(degrees).map_err(|e| e.to_string())?;
 
         // Normalize to 0-359 range
-        let normalized = ((degrees % 360) + 360) % 360;
+        let normalized = degrees.rem_euclid(360);
 
         match normalized {
             0 => Ok(Orientation::Normal),
