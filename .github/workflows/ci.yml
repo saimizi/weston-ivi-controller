@@ -46,7 +46,14 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libpixman-1-dev
+          sudo apt-get install -y \
+            libpixman-1-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libdrm-dev \
+            libgbm-dev \
+            libinput-dev \
+            libudev-dev
 
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -86,7 +93,14 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libpixman-1-dev
+          sudo apt-get install -y \
+            libpixman-1-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libdrm-dev \
+            libgbm-dev \
+            libinput-dev \
+            libudev-dev
 
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
