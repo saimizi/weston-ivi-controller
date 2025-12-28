@@ -12,9 +12,9 @@ use ipcon_sys::{
 };
 #[allow(unused)]
 use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::{str::FromStr, sync::atomic::AtomicBool};
 
 use crate::rpc::transport::{ClientId, MessageHandler, Transport, TransportError};
 
@@ -32,7 +32,7 @@ use crate::rpc::transport::{ClientId, MessageHandler, Transport, TransportError}
 /// ```no_run
 /// use weston_ivi_controller::transport::ipcon::IpconTransport;
 ///
-/// let transport = IpconTransport::new(None)?;
+/// let transport = IpconTransport::new(None).unwrap();
 /// // Register handler, start transport...
 /// ```
 pub struct IpconTransport {
@@ -118,7 +118,7 @@ impl IpconTransport {
                 IpconMsg::IpconMsgUser(data) => {
                     // Ipcon is a message-based protocol, so each message is complete
                     if data.msg_type == IpconMsgType::IpconMsgTypeNormal {
-                        let client_id = ClientId::from_str(&data.peer);
+                        let client_id = ClientId::from_str(&data.peer)?;
                         handler.handle_message(&client_id, &data.buf);
 
                         {
@@ -136,7 +136,7 @@ impl IpconTransport {
                     // Client is removed
                     if let Some(peer) = kevent.peer_removed() {
                         jinfo!("IPCON group removed: {}", peer);
-                        handler.handle_disconnect(&ClientId::from_str(&peer));
+                        handler.handle_disconnect(&ClientId::from_str(&peer)?);
 
                         {
                             // Remove client from connected clients list
@@ -234,8 +234,9 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     /// Test handler that records messages and disconnects
+    type IviMessage = (ClientId, Vec<u8>);
     struct TestHandler {
-        messages: Arc<Mutex<Vec<(ClientId, Vec<u8>)>>>,
+        messages: Arc<Mutex<Vec<IviMessage>>>,
         disconnects: Arc<Mutex<Vec<ClientId>>>,
     }
 
@@ -353,7 +354,7 @@ mod tests {
     fn test_client_id_conversions() {
         // Test ClientId creation for IPCON
         let peer_name = "test-peer";
-        let client_id = ClientId::from_str(peer_name);
+        let client_id = ClientId::from_str(peer_name).unwrap();
 
         // Verify it's an IPCON ID
         assert_eq!(client_id.ipcon_id(), Some(peer_name));
@@ -369,7 +370,7 @@ mod tests {
 
     #[test]
     fn test_client_id_display() {
-        let client_id = ClientId::from_str("test-peer");
+        let client_id = ClientId::from_str("test-peer").unwrap();
         let display = format!("{}", client_id);
         assert!(display.contains("IpconId"));
         assert!(display.contains("test-peer"));
@@ -429,7 +430,10 @@ mod tests {
         let transport = IpconTransport::new(None).expect("IPCON not available");
 
         let data = b"multicast test message";
-        let client_ids = vec![ClientId::from_str("peer1"), ClientId::from_str("peer2")];
+        let client_ids = [
+            ClientId::from_str("peer1").unwrap(),
+            ClientId::from_str("peer2").unwrap(),
+        ];
         let client_refs: Vec<&ClientId> = client_ids.iter().collect();
 
         // This should use multicast group

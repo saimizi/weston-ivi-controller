@@ -58,13 +58,16 @@ impl ClientId {
     pub fn from_string(id: String) -> Self {
         ClientId::IpconId(id)
     }
+}
 
-    /// Create a `ClientId` from a string slice (IPCON peer name)
-    ///
-    /// Only available when the `enable-ipcon` feature is enabled.
-    #[cfg(feature = "enable-ipcon")]
-    pub fn from_str(id: &str) -> Self {
-        ClientId::IpconId(id.to_string())
+#[cfg(feature = "enable-ipcon")]
+impl std::str::FromStr for ClientId {
+    type Err = TransportError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        {
+            Ok(ClientId::IpconId(s.to_string()))
+        }
     }
 }
 
