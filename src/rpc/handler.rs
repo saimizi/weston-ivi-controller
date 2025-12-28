@@ -103,7 +103,7 @@ impl RpcHandler {
                         let notifications = subscription_manager
                             .lock()
                             .unwrap()
-                            .drain_notifications(client_id);
+                            .drain_notifications(&client_id);
 
                         if notifications.is_empty() {
                             continue;
@@ -123,7 +123,7 @@ impl RpcHandler {
                                     // Send to client
                                     let transport_lock = transport.lock().unwrap();
                                     if let Some(ref t) = *transport_lock {
-                                        if let Err(e) = t.send(client_id, &json) {
+                                        if let Err(e) = t.send(&client_id, &json) {
                                             jwarn!(
                                                 "Failed to send notification to client {}: {:?}",
                                                 client_id,
@@ -150,7 +150,7 @@ impl RpcHandler {
     }
 
     /// Handle an RPC request
-    pub fn handle_request(&self, client_id: ClientId, request: RpcRequest) -> RpcResponse {
+    pub fn handle_request(&self, client_id: &ClientId, request: RpcRequest) -> RpcResponse {
         jdebug!(
             "Handling RPC request from client {}: method={}, id={}",
             client_id,
@@ -615,7 +615,7 @@ impl RpcHandler {
     /// Handle subscribe request - subscribe to event types
     fn handle_subscribe(
         &self,
-        client_id: ClientId,
+        client_id: &ClientId,
         event_types: Vec<EventType>,
     ) -> Result<serde_json::Value, RpcError> {
         jinfo!(
@@ -626,7 +626,7 @@ impl RpcHandler {
 
         let subscription_manager = self.subscription_manager.lock().unwrap();
         let subscribed = subscription_manager
-            .subscribe(client_id, event_types)
+            .subscribe(&client_id, event_types)
             .map_err(|e| RpcError::internal_error(e))?;
 
         jinfo!(
@@ -644,7 +644,7 @@ impl RpcHandler {
     /// Handle unsubscribe request - unsubscribe from event types
     fn handle_unsubscribe(
         &self,
-        client_id: ClientId,
+        client_id: &ClientId,
         event_types: Vec<EventType>,
     ) -> Result<serde_json::Value, RpcError> {
         jinfo!(
@@ -655,7 +655,7 @@ impl RpcHandler {
 
         let subscription_manager = self.subscription_manager.lock().unwrap();
         let unsubscribed = subscription_manager
-            .unsubscribe(client_id, event_types)
+            .unsubscribe(&client_id, event_types)
             .map_err(|e| RpcError::internal_error(e))?;
 
         jinfo!(
@@ -673,12 +673,12 @@ impl RpcHandler {
     /// Handle list_subscriptions request - list all active subscriptions for a client
     fn handle_list_subscriptions(
         &self,
-        client_id: ClientId,
+        client_id: &ClientId,
     ) -> Result<serde_json::Value, RpcError> {
         jdebug!("Listing subscriptions for client {}", client_id);
 
         let subscription_manager = self.subscription_manager.lock().unwrap();
-        let subscriptions = subscription_manager.get_subscriptions(client_id);
+        let subscriptions = subscription_manager.get_subscriptions(&client_id);
 
         jdebug!(
             "Client {} has {} active subscriptions",
@@ -1430,7 +1430,7 @@ struct RpcMessageHandler {
 }
 
 impl MessageHandler for RpcMessageHandler {
-    fn handle_message(&self, client_id: ClientId, data: &[u8]) {
+    fn handle_message(&self, client_id: &ClientId, data: &[u8]) {
         jtrace!("Received message from client {}", client_id);
 
         // Parse the incoming message as an RPC request
@@ -1492,7 +1492,7 @@ impl MessageHandler for RpcMessageHandler {
         }
     }
 
-    fn handle_disconnect(&self, client_id: ClientId) {
+    fn handle_disconnect(&self, client_id: &ClientId) {
         // Log the disconnection
         jinfo!("Client {} disconnected", client_id);
 
@@ -1545,15 +1545,19 @@ mod tests {
             Ok(())
         }
 
-        fn send(&self, client_id: ClientId, data: &[u8]) -> Result<(), TransportError> {
-            self.last_client_id.store(client_id, Ordering::SeqCst);
-            *self.last_message.lock().unwrap() = data.to_vec();
-            Ok(())
+        fn send(&self, client_id: &ClientId, data: &[u8]) -> Result<(), TransportError> {
+            if let Some(id) = client_id.unix_domain_id() {
+                self.last_client_id.store(id, Ordering::SeqCst);
+                *self.last_message.lock().unwrap() = data.to_vec();
+                Ok(())
+            } else {
+                Err(TransportError::SendError("Invalid client ID".to_string()))
+            }
         }
 
         fn send_to_clients(
             &self,
-            client_ids: &[ClientId],
+            client_ids: &[&ClientId],
             data: &[u8],
         ) -> Result<(), TransportError> {
             for &client_id in client_ids {
@@ -1563,7 +1567,7 @@ mod tests {
         }
 
         fn get_connected_clients(&self) -> Vec<ClientId> {
-            vec![1]
+            vec![ClientId::from_u64(1)]
         }
 
         fn register_handler(&mut self, handler: Box<dyn MessageHandler>) {

@@ -27,8 +27,8 @@ struct ClientConnection {
 
 /// Shared state for the transport
 struct TransportState {
-    clients: HashMap<ClientId, ClientConnection>,
-    next_client_id: ClientId,
+    clients: HashMap<u64, ClientConnection>,
+    next_client_id: u64,
     handler: Option<Arc<dyn MessageHandler>>,
     running: bool,
 }
@@ -157,7 +157,7 @@ impl UnixSocketTransport {
                         Ok((alive, messages)) => {
                             // Store messages if any
                             if !messages.is_empty() {
-                                client_messages.push((client_id, messages));
+                                client_messages.push((ClientId::from_u64(client_id), messages));
                             }
 
                             // Mark for disconnection if not alive
@@ -185,7 +185,7 @@ impl UnixSocketTransport {
             if let Some(ref handler) = handler {
                 for (client_id, messages) in client_messages {
                     for message in messages {
-                        handler.handle_message(client_id, &message);
+                        handler.handle_message(&client_id, &message);
                     }
                 }
             }
@@ -199,7 +199,7 @@ impl UnixSocketTransport {
                     state_lock.clients.remove(&client_id);
 
                     if let Some(ref handler) = state_lock.handler {
-                        handler.handle_disconnect(client_id);
+                        handler.handle_disconnect(&ClientId::from_u64(client_id));
                     }
                 }
             }
@@ -281,8 +281,15 @@ impl Transport for UnixSocketTransport {
         Ok(())
     }
 
-    fn send(&self, client_id: ClientId, data: &[u8]) -> Result<(), TransportError> {
+    fn send(&self, client_id: &ClientId, data: &[u8]) -> Result<(), TransportError> {
         let mut state = self.state.lock().unwrap();
+
+        let client_id = client_id.unix_domain_id().ok_or_else(|| {
+            TransportError::SendError(format!(
+                "Client ID {} is not a valid UNIX domain socket ID",
+                client_id
+            ))
+        })?;
 
         if let Some(connection) = state.clients.get_mut(&client_id) {
             // Use the shared framing module to write the frame
@@ -298,16 +305,23 @@ impl Transport for UnixSocketTransport {
         }
     }
 
-    fn send_to_clients(&self, client_ids: &[ClientId], data: &[u8]) -> Result<(), TransportError> {
+    fn send_to_clients(&self, client_ids: &[&ClientId], data: &[u8]) -> Result<(), TransportError> {
         let mut state = self.state.lock().unwrap();
         let mut errors = Vec::new();
 
         for &client_id in client_ids {
-            if let Some(connection) = state.clients.get_mut(&client_id) {
-                // Use the shared framing module (best-effort delivery)
-                if let Err(e) = write_frame(&mut connection.stream, data) {
-                    errors.push((client_id, e));
+            if let Some(client_id) = client_id.unix_domain_id() {
+                if let Some(connection) = state.clients.get_mut(&client_id) {
+                    // Use the shared framing module (best-effort delivery)
+                    if let Err(e) = write_frame(&mut connection.stream, data) {
+                        errors.push((client_id, e));
+                    }
                 }
+            } else {
+                jwarn!(
+                    "Client ID {} is not a valid Unix domain socket ID",
+                    client_id
+                );
             }
         }
 
@@ -322,7 +336,11 @@ impl Transport for UnixSocketTransport {
 
     fn get_connected_clients(&self) -> Vec<ClientId> {
         let state = self.state.lock().unwrap();
-        state.clients.keys().copied().collect()
+        state
+            .clients
+            .keys()
+            .map(|&id| ClientId::from_u64(id))
+            .collect()
     }
 
     fn register_handler(&mut self, handler: Box<dyn MessageHandler>) {
@@ -347,15 +365,15 @@ mod tests {
     }
 
     impl MessageHandler for TestHandler {
-        fn handle_message(&self, client_id: ClientId, data: &[u8]) {
+        fn handle_message(&self, client_id: &ClientId, data: &[u8]) {
             self.messages
                 .lock()
                 .unwrap()
-                .push((client_id, data.to_vec()));
+                .push((client_id.clone(), data.to_vec()));
         }
 
-        fn handle_disconnect(&self, client_id: ClientId) {
-            self.disconnects.lock().unwrap().push(client_id);
+        fn handle_disconnect(&self, client_id: &ClientId) {
+            self.disconnects.lock().unwrap().push(client_id.clone());
         }
     }
 

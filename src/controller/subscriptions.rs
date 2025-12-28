@@ -88,12 +88,12 @@ impl SubscriptionManager {
     /// Subscribe a client to event types
     pub fn subscribe(
         &self,
-        client_id: ClientId,
+        client_id: &ClientId,
         event_types: Vec<EventType>,
     ) -> Result<Vec<EventType>, String> {
         let mut subs = self.subscriptions.lock().unwrap();
         let client_sub = subs
-            .entry(client_id)
+            .entry(client_id.clone())
             .or_insert_with(|| ClientSubscription::new(self.buffer_size));
 
         client_sub.subscribe(event_types.clone());
@@ -106,7 +106,7 @@ impl SubscriptionManager {
     /// Unsubscribe a client from event types
     pub fn unsubscribe(
         &self,
-        client_id: ClientId,
+        client_id: &ClientId,
         event_types: Vec<EventType>,
     ) -> Result<Vec<EventType>, String> {
         let mut subs = self.subscriptions.lock().unwrap();
@@ -121,7 +121,7 @@ impl SubscriptionManager {
     }
 
     /// Get a client's current subscriptions
-    pub fn get_subscriptions(&self, client_id: ClientId) -> Vec<EventType> {
+    pub fn get_subscriptions(&self, client_id: &ClientId) -> Vec<EventType> {
         let subs = self.subscriptions.lock().unwrap();
         subs.get(&client_id)
             .map(|client_sub| client_sub.get_subscriptions())
@@ -135,7 +135,7 @@ impl SubscriptionManager {
         let subscribed_clients: Vec<ClientId> = subs
             .iter()
             .filter(|(_, client_sub)| client_sub.is_subscribed(&event_type))
-            .map(|(client_id, _)| *client_id)
+            .map(|(client_id, _)| (*client_id).clone())
             .collect();
 
         for client_id in subscribed_clients {
@@ -152,7 +152,7 @@ impl SubscriptionManager {
     }
 
     /// Drain all pending notifications for a client
-    pub fn drain_notifications(&self, client_id: ClientId) -> Vec<RpcNotification> {
+    pub fn drain_notifications(&self, client_id: &ClientId) -> Vec<RpcNotification> {
         let mut subs = self.subscriptions.lock().unwrap();
         subs.get_mut(&client_id)
             .map(|client_sub| client_sub.drain_notifications())
@@ -160,7 +160,7 @@ impl SubscriptionManager {
     }
 
     /// Remove a client (called on disconnect)
-    pub fn remove_client(&self, client_id: ClientId) {
+    pub fn remove_client(&self, client_id: &ClientId) {
         let mut subs = self.subscriptions.lock().unwrap();
         if subs.remove(&client_id).is_some() {
             jinfo!(
@@ -191,33 +191,33 @@ mod tests {
     #[test]
     fn test_subscribe() {
         let manager = SubscriptionManager::new();
-        let client_id = 1;
+        let client_id = ClientId::from_u64(1);
         let events = vec![EventType::SurfaceCreated, EventType::SurfaceDestroyed];
 
-        let result = manager.subscribe(client_id, events.clone());
+        let result = manager.subscribe(&client_id, events.clone());
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), events);
 
-        let subs = manager.get_subscriptions(client_id);
+        let subs = manager.get_subscriptions(&client_id);
         assert_eq!(subs.len(), 2);
     }
 
     #[test]
     fn test_unsubscribe() {
         let manager = SubscriptionManager::new();
-        let client_id = 1;
+        let client_id = ClientId::from_u64(1);
 
         manager
             .subscribe(
-                client_id,
+                &client_id,
                 vec![EventType::SurfaceCreated, EventType::SourceGeometryChanged],
             )
             .unwrap();
 
-        let result = manager.unsubscribe(client_id, vec![EventType::SurfaceCreated]);
+        let result = manager.unsubscribe(&client_id, vec![EventType::SurfaceCreated]);
         assert!(result.is_ok());
 
-        let subs = manager.get_subscriptions(client_id);
+        let subs = manager.get_subscriptions(&client_id);
         assert_eq!(subs.len(), 1);
         assert!(subs.contains(&EventType::SourceGeometryChanged));
     }
@@ -225,10 +225,10 @@ mod tests {
     #[test]
     fn test_queue_and_drain_notifications() {
         let manager = SubscriptionManager::new();
-        let client_id = 1;
+        let client_id = ClientId::from_u64(1);
 
         manager
-            .subscribe(client_id, vec![EventType::SurfaceCreated])
+            .subscribe(&client_id, vec![EventType::SurfaceCreated])
             .unwrap();
 
         let notification = RpcNotification::new(
@@ -238,22 +238,22 @@ mod tests {
 
         manager.queue_notification(EventType::SurfaceCreated, notification.clone());
 
-        let drained = manager.drain_notifications(client_id);
+        let drained = manager.drain_notifications(&client_id);
         assert_eq!(drained.len(), 1);
         assert_eq!(drained[0], notification);
 
         // Should be empty after drain
-        let drained2 = manager.drain_notifications(client_id);
+        let drained2 = manager.drain_notifications(&client_id);
         assert_eq!(drained2.len(), 0);
     }
 
     #[test]
     fn test_buffer_overflow() {
         let manager = SubscriptionManager::with_buffer_size(2);
-        let client_id = 1;
+        let client_id = ClientId::from_u64(1);
 
         manager
-            .subscribe(client_id, vec![EventType::SurfaceCreated])
+            .subscribe(&client_id, vec![EventType::SurfaceCreated])
             .unwrap();
 
         // Queue 3 notifications (exceeds buffer size of 2)
@@ -265,7 +265,7 @@ mod tests {
             manager.queue_notification(EventType::SurfaceCreated, notification);
         }
 
-        let drained = manager.drain_notifications(client_id);
+        let drained = manager.drain_notifications(&client_id);
         // Should only have the last 2 notifications
         assert_eq!(drained.len(), 2);
     }
@@ -273,31 +273,31 @@ mod tests {
     #[test]
     fn test_remove_client() {
         let manager = SubscriptionManager::new();
-        let client_id = 1;
+        let client_id = ClientId::from_u64(1);
 
         manager
-            .subscribe(client_id, vec![EventType::SurfaceCreated])
+            .subscribe(&client_id, vec![EventType::SurfaceCreated])
             .unwrap();
 
         assert_eq!(manager.subscriber_count(), 1);
 
-        manager.remove_client(client_id);
+        manager.remove_client(&client_id);
 
         assert_eq!(manager.subscriber_count(), 0);
-        assert_eq!(manager.get_subscriptions(client_id).len(), 0);
+        assert_eq!(manager.get_subscriptions(&client_id).len(), 0);
     }
 
     #[test]
     fn test_only_subscribed_clients_receive_notifications() {
         let manager = SubscriptionManager::new();
-        let client1 = 1;
-        let client2 = 2;
+        let client1 = ClientId::from_u64(1);
+        let client2 = ClientId::from_u64(2);
 
         manager
-            .subscribe(client1, vec![EventType::SurfaceCreated])
+            .subscribe(&client1, vec![EventType::SurfaceCreated])
             .unwrap();
         manager
-            .subscribe(client2, vec![EventType::SourceGeometryChanged])
+            .subscribe(&client2, vec![EventType::SourceGeometryChanged])
             .unwrap();
 
         let notification = RpcNotification::new(
@@ -308,11 +308,11 @@ mod tests {
         manager.queue_notification(EventType::SurfaceCreated, notification);
 
         // Client 1 should receive it
-        let drained1 = manager.drain_notifications(client1);
+        let drained1 = manager.drain_notifications(&client1);
         assert_eq!(drained1.len(), 1);
 
         // Client 2 should not
-        let drained2 = manager.drain_notifications(client2);
+        let drained2 = manager.drain_notifications(&client2);
         assert_eq!(drained2.len(), 0);
     }
 }

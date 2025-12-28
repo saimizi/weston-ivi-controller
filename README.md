@@ -21,7 +21,7 @@ with:
 
 - **Memory-safe Rust implementation** with C FFI for Weston integration
 - **JSON-RPC protocol** for client-server communication
-- **Pluggable transport layer** (UNIX domain sockets included)
+- **Pluggable transport layer** (Unix domain sockets default, IPCON optional)
 - **Comprehensive surface control** (position, size, visibility, opacity,
   orientation, z-order, focus)
 - **Real-time state tracking** of all IVI surfaces
@@ -51,7 +51,7 @@ with:
                          ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                  Transport Layer                            │
-│             (UNIX Domain Socket / Pluggable)                │
+│        (Unix Domain Sockets / IPCON / Pluggable)            │
 └────────────────────────┬────────────────────────────────────┘
                          │
                          ▼
@@ -207,6 +207,48 @@ cargo build --release --target aarch64-unknown-linux-gnu
 # Note: You may need to install cross-compilation toolchain
 # and set appropriate linker in .cargo/config.toml
 ```
+
+## Transport Options
+
+The controller supports multiple IPC transport mechanisms, selected at compile time using feature flags.
+
+### Unix Domain Sockets (Default)
+
+By default, the controller uses Unix domain sockets for local IPC communication:
+
+```bash
+cargo build --release
+```
+
+This creates a socket at `/tmp/weston-ivi-controller.sock` for client connections.
+
+### IPCON Transport (Optional)
+
+IPCON (Inter-Process Communication via Notifications) is an alternative message-based IPC mechanism that provides:
+
+- **Multicast groups**: Efficient broadcast of event notifications to multiple subscribers
+- **Message-based protocol**: Built-in message framing and routing
+- **Peer discovery**: Automatic client tracking
+
+To build with IPCON transport:
+
+```bash
+cargo build --release --features enable-ipcon
+```
+
+**Note**: Only one transport can be active at a time. The feature flag determines which transport implementation is compiled into the binary.
+
+### Choosing a Transport
+
+| Feature | Unix Sockets | IPCON |
+|---------|--------------|-------|
+| Default | ✅ Yes | ❌ No |
+| Multicast | ❌ Manual iteration | ✅ Native support |
+| Complexity | Lower | Higher |
+| Dependencies | Standard library | Requires `ipcon-sys` |
+| Use Case | General purpose | High-performance event broadcasting |
+
+For most use cases, the default Unix domain socket transport is recommended. Enable IPCON if you need native multicast support for efficient event notification delivery.
 
 ## Installation
 
@@ -565,7 +607,8 @@ weston-ivi-controller/
 │   │   └── handler.rs      # Request handler
 │   ├── transport/          # Transport implementations
 │   │   ├── mod.rs
-│   │   └── unix_socket.rs  # UNIX socket transport
+│   │   ├── unix_socket.rs  # Unix socket transport (default)
+│   │   └── ipcon.rs        # IPCON transport (optional)
 │   ├── error.rs            # Error types
 │   └── logging.rs          # Logging setup
 ├── ivi-client/             # Client library

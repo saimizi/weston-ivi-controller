@@ -100,7 +100,11 @@ use controller::{
     EventContext, EventListeners, IdAssignmentConfig, IdAssignmentManager, StateManager,
 };
 use rpc::{NotificationBridge, RpcHandler};
+#[cfg(not(feature = "enable-ipcon"))]
 use transport::{unix_socket::UnixSocketConfig, UnixSocketTransport};
+
+#[cfg(feature = "enable-ipcon")]
+use transport::ipcon::IpconTransport;
 
 /// Plugin configuration structure
 ///
@@ -414,20 +418,37 @@ unsafe fn plugin_init_impl(
 
     jinfo!("RPC handler created");
 
-    // Create and register UNIX socket transport
-    let transport_config = UnixSocketConfig {
-        socket_path: config.socket_path.clone(),
-        max_connections: config.max_connections,
-    };
+    #[cfg(feature = "enable-ipcon")]
+    {
+        let transport = Box::new(IpconTransport::new(None).map_err(|e| {
+            jerror!("Failed to create IPCon transport: {:?}", e);
+            format!("Failed to create IPCon transport: {:?}", e)
+        })?);
 
-    let transport = Box::new(UnixSocketTransport::new(transport_config));
+        rpc_handler.register_transport(transport).map_err(|e| {
+            jerror!("Failed to register transport: {:?}", e);
+            format!("Failed to register transport: {:?}", e)
+        })?;
 
-    rpc_handler.register_transport(transport).map_err(|e| {
-        jerror!("Failed to register transport: {:?}", e);
-        format!("Failed to register transport: {:?}", e)
-    })?;
+        jinfo!("Transport registered");
+    }
 
-    jinfo!("Transport registered");
+    #[cfg(not(feature = "enable-ipcon"))]
+    {
+        // Create and register UNIX socket transport
+        let transport_config = UnixSocketConfig {
+            socket_path: config.socket_path.clone(),
+            max_connections: config.max_connections,
+        };
+
+        let transport = Box::new(UnixSocketTransport::new(transport_config));
+        rpc_handler.register_transport(transport).map_err(|e| {
+            jerror!("Failed to register transport: {:?}", e);
+            format!("Failed to register transport: {:?}", e)
+        })?;
+
+        jinfo!("Transport registered");
+    }
 
     // Create ID assignment manager with parsed configuration
     let id_assignment_manager = Arc::new(
