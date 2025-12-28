@@ -21,6 +21,15 @@ license = "MIT"
 [lib]
 crate-type = ["rlib", "cdylib"]
 
+[features]
+# By default, use Unix domain socket transport
+default = []
+
+# Enable IPCON transport instead of Unix domain sockets
+# IPCON provides message-based IPC with multicast support for efficient event notifications
+# Usage: cargo build --features enable-ipcon
+enable-ipcon = ["ipcon-sys/async", "ipcon-sys/futures", "ipcon-sys/tokio"]
+
 [dependencies]
 libc = { workspace = true }
 serde = { workspace = true }
@@ -31,10 +40,14 @@ tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 mio = { workspace = true }
 lazy_static = { workspace = true }
+ipcon-sys = { version = "0.2.3", features = [
+  "async",
+  "futures",
+  "tokio",
+], optional = true }
 
 [build-dependencies]
 bindgen = "0.69"
 
 [dev-dependencies]
 proptest = "1.4"
-

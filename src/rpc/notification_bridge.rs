@@ -212,6 +212,7 @@ mod tests {
     use crate::controller::notifications::NotificationType;
     use crate::ffi::bindings::Orientation;
     use crate::ffi::Rectangle;
+    use crate::rpc::ClientId;
 
     #[test]
     fn test_convert_surface_created() {
@@ -325,12 +326,13 @@ mod tests {
     fn test_handle_notification_queues_to_manager() {
         let subscription_manager = Arc::new(Mutex::new(SubscriptionManager::new()));
         let bridge = NotificationBridge::new(Arc::clone(&subscription_manager));
+        let client_id = ClientId::from_u64(1);
 
         // Subscribe client 1 to SurfaceCreated events
         subscription_manager
             .lock()
             .unwrap()
-            .subscribe(1, vec![EventType::SurfaceCreated])
+            .subscribe(&client_id, vec![EventType::SurfaceCreated])
             .unwrap();
 
         // Handle a surface created notification
@@ -342,7 +344,10 @@ mod tests {
         bridge.handle_notification(&notification);
 
         // Drain notifications for client 1
-        let notifications = subscription_manager.lock().unwrap().drain_notifications(1);
+        let notifications = subscription_manager
+            .lock()
+            .unwrap()
+            .drain_notifications(&client_id);
 
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].method, "notification");
