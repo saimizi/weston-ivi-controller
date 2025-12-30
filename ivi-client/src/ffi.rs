@@ -12,7 +12,7 @@ use std::ptr;
 use crate::client::IviClient;
 use crate::error::IviError;
 
-pub type SuffaceId = u32;
+pub type SurfaceId = u32;
 pub type LayerId = u32;
 
 #[repr(C)]
@@ -134,7 +134,7 @@ impl Display for IviOrientation {
 #[repr(C)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IviSurface {
-    pub id: SuffaceId,
+    pub id: SurfaceId,
     pub orig_size: IviSize,
     pub src_rect: Rectangle,
     pub dest_rect: Rectangle,
@@ -212,22 +212,18 @@ fn write_error_to_buffer(error: &IviError, error_buf: *mut c_char, error_buf_len
 /// If NULL is returned, the error message is written to `error_buf`.
 #[no_mangle]
 pub unsafe extern "C" fn ivi_client_connect(
-    socket_path: *const c_char,
+    remote: *const c_char,
     error_buf: *mut c_char,
     error_buf_len: usize,
 ) -> *mut IviClient {
-    // Default socket path
-    let default_path = "/tmp/weston-ivi-controller.sock";
-
-    // Get socket path from parameter or use default
-    let path = if socket_path.is_null() {
-        default_path.to_string()
+    let remote = if remote.is_null() {
+        None
     } else {
-        match CStr::from_ptr(socket_path).to_str() {
-            Ok(s) => s.to_string(),
+        match CStr::from_ptr(remote).to_str() {
+            Ok(s) => Some(s),
             Err(_) => {
                 write_error_to_buffer(
-                    &IviError::ConnectionFailed("Invalid socket path encoding".to_string()),
+                    &IviError::ConnectionFailed("Invalid remote encoding".to_string()),
                     error_buf,
                     error_buf_len,
                 );
@@ -236,8 +232,7 @@ pub unsafe extern "C" fn ivi_client_connect(
         }
     };
 
-    // Attempt to connect
-    match IviClient::connect(&path) {
+    match IviClient::new(remote) {
         Ok(client) => Box::into_raw(Box::new(client)),
         Err(err) => {
             write_error_to_buffer(&err, error_buf, error_buf_len);

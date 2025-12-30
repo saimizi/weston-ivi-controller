@@ -1,12 +1,13 @@
 //! Integration tests for the IVI client library
 //!
 //! These tests verify the complete functionality of the client library.
-
+#[allow(unused_imports)]
 use ivi_client::{IviClient, IviError};
 
+#[cfg(not(feature = "enable-ipcon"))]
 #[test]
 fn test_connection_to_nonexistent_socket() {
-    let result = IviClient::connect("/tmp/nonexistent-socket-12345.sock");
+    let result = IviClient::new(Some("/tmp/nonexistent-socket-12345.sock"));
     assert!(result.is_err());
 
     match result {
@@ -15,12 +16,6 @@ fn test_connection_to_nonexistent_socket() {
         }
         _ => panic!("Expected ConnectionFailed error"),
     }
-}
-
-#[test]
-fn test_default_socket_path_constant() {
-    use ivi_client::client::DEFAULT_SOCKET_PATH;
-    assert_eq!(DEFAULT_SOCKET_PATH, "/tmp/weston-ivi-controller.sock");
 }
 
 // Note: Full end-to-end tests with a real IVI controller would require

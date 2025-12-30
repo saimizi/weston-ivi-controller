@@ -198,6 +198,7 @@ pub enum RpcMethod {
         y: i32,
         width: i32,
         height: i32,
+        auto_commit: bool,
     },
     SetSurfaceDestinationRectangle {
         id: u32,
@@ -205,21 +206,26 @@ pub enum RpcMethod {
         y: i32,
         width: i32,
         height: i32,
+        auto_commit: bool,
     },
     SetSurfaceVisibility {
         id: u32,
         visible: bool,
+        auto_commit: bool,
     },
     SetSurfaceOpacity {
         id: u32,
         opacity: f32,
+        auto_commit: bool,
     },
     SetSurfaceZOrder {
         id: u32,
         z_order: i32,
+        auto_commit: bool,
     },
     SetSurfaceFocus {
         id: u32,
+        auto_commit: bool,
     },
     Commit,
 
@@ -241,9 +247,11 @@ pub enum RpcMethod {
         id: u32,
         width: i32,
         height: i32,
+        auto_commit: bool,
     },
     DestroyLayer {
         id: u32,
+        auto_commit: bool,
     },
     SetLayerSourceRectangle {
         id: u32,
@@ -251,6 +259,7 @@ pub enum RpcMethod {
         y: i32,
         width: i32,
         height: i32,
+        auto_commit: bool,
     },
     SetLayerDestinationRectangle {
         id: u32,
@@ -258,14 +267,17 @@ pub enum RpcMethod {
         y: i32,
         width: i32,
         height: i32,
+        auto_commit: bool,
     },
     SetLayerVisibility {
         id: u32,
         visible: bool,
+        auto_commit: bool,
     },
     SetLayerOpacity {
         id: u32,
         opacity: f32,
+        auto_commit: bool,
     },
     // Layer-surface assignment operations
     SetLayerSurfaces {
@@ -368,12 +380,19 @@ impl RpcMethod {
                         )
                     })? as i32;
 
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
                 Ok(RpcMethod::SetSurfaceSourceRectangle {
                     id,
                     x,
                     y,
                     width,
                     height,
+                    auto_commit,
                 })
             }
 
@@ -415,12 +434,20 @@ impl RpcMethod {
                             "Missing or invalid 'height' parameter".to_string(),
                         )
                     })? as i32;
+
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
                 Ok(RpcMethod::SetSurfaceDestinationRectangle {
                     id,
                     x,
                     y,
                     width,
                     height,
+                    auto_commit,
                 })
             }
 
@@ -441,7 +468,16 @@ impl RpcMethod {
                             "Missing or invalid 'visible' parameter".to_string(),
                         )
                     })?;
-                Ok(RpcMethod::SetSurfaceVisibility { id, visible })
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Ok(RpcMethod::SetSurfaceVisibility {
+                    id,
+                    visible,
+                    auto_commit,
+                })
             }
 
             "set_surface_opacity" => {
@@ -461,9 +497,15 @@ impl RpcMethod {
                             "Missing or invalid 'opacity' parameter".to_string(),
                         )
                     })?;
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 Ok(RpcMethod::SetSurfaceOpacity {
                     id,
                     opacity: opacity as f32,
+                    auto_commit,
                 })
             }
 
@@ -484,7 +526,16 @@ impl RpcMethod {
                             "Missing or invalid 'z_order' parameter".to_string(),
                         )
                     })? as i32;
-                Ok(RpcMethod::SetSurfaceZOrder { id, z_order })
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Ok(RpcMethod::SetSurfaceZOrder {
+                    id,
+                    z_order,
+                    auto_commit,
+                })
             }
 
             "set_surface_focus" => {
@@ -495,7 +546,15 @@ impl RpcMethod {
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
                     })?;
-                Ok(RpcMethod::SetSurfaceFocus { id: id as u32 })
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Ok(RpcMethod::SetSurfaceFocus {
+                    id: id as u32,
+                    auto_commit,
+                })
             }
 
             "commit" => Ok(RpcMethod::Commit),
@@ -562,7 +621,17 @@ impl RpcMethod {
                             "Missing or invalid 'height' parameter".to_string(),
                         )
                     })? as i32;
-                Ok(RpcMethod::CreateLayer { id, width, height })
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Ok(RpcMethod::CreateLayer {
+                    id,
+                    width,
+                    height,
+                    auto_commit,
+                })
             }
 
             "destroy_layer" => {
@@ -573,7 +642,12 @@ impl RpcMethod {
                     .ok_or_else(|| {
                         RpcError::invalid_params("Missing or invalid 'id' parameter".to_string())
                     })? as u32;
-                Ok(RpcMethod::DestroyLayer { id })
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Ok(RpcMethod::DestroyLayer { id, auto_commit })
             }
 
             "get_layer" => {
@@ -625,12 +699,18 @@ impl RpcMethod {
                             "Missing or invalid 'height' parameter".to_string(),
                         )
                     })? as i32;
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 Ok(RpcMethod::SetLayerSourceRectangle {
                     id,
                     x,
                     y,
                     width,
                     height,
+                    auto_commit,
                 })
             }
 
@@ -672,12 +752,18 @@ impl RpcMethod {
                             "Missing or invalid 'height' parameter".to_string(),
                         )
                     })? as i32;
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 Ok(RpcMethod::SetLayerDestinationRectangle {
                     id,
                     x,
                     y,
                     width,
                     height,
+                    auto_commit,
                 })
             }
 
@@ -698,9 +784,15 @@ impl RpcMethod {
                             "Missing or invalid 'visible' parameter".to_string(),
                         )
                     })?;
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 Ok(RpcMethod::SetLayerVisibility {
                     id: id as u32,
                     visible,
+                    auto_commit,
                 })
             }
 
@@ -721,7 +813,16 @@ impl RpcMethod {
                             "Missing or invalid 'opacity' parameter".to_string(),
                         )
                     })? as f32;
-                Ok(RpcMethod::SetLayerOpacity { id, opacity })
+                let auto_commit = request
+                    .params
+                    .get("auto_commit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Ok(RpcMethod::SetLayerOpacity {
+                    id,
+                    opacity,
+                    auto_commit,
+                })
             }
 
             // Layer-surface assignment operations

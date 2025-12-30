@@ -2,15 +2,27 @@
 //!
 //! This module provides the main `IviClient` struct that manages the connection to the
 //! Weston IVI controller via UNIX domain sockets and handles JSON-RPC communication.
+//!
+#[cfg(not(feature = "enable-ipcon"))]
+pub mod unix_domain;
+
+#[cfg(feature = "enable-ipcon")]
+pub mod ipcon;
 
 use crate::error::{IviError, Result};
 use crate::ffi::*;
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
+#[allow(unused)]
+use jlogger_tracing::{jdebug, jerror, jinfo, jwarn};
 use serde_json::json;
 use serde_json::Value;
-use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicU64, Ordering};
-use weston_ivi_controller::rpc::framing::{write_frame, FrameReadResult, FrameReader};
+
+#[cfg(not(feature = "enable-ipcon"))]
+use unix_domain::UnixDomainIviClient;
+
+#[cfg(feature = "enable-ipcon")]
+pub use ipcon::IpconIviClient;
 
 pub enum IviRequestResult {
     /// Result of creating a layer, returns the new layer ID
@@ -18,74 +30,49 @@ pub enum IviRequestResult {
     GetLayer(IviLayer),
 }
 
-/// Default socket path for the IVI controller
-pub const DEFAULT_SOCKET_PATH: &str = "/tmp/weston-ivi-controller.sock";
+trait IviClientTransport {
+    fn send_request(&mut self, request: &[u8]) -> Result<()>;
+    fn receive_response(&mut self) -> Result<Vec<u8>>;
+    fn disconnect(&mut self) -> Result<()>;
+}
 
-/// Client for communicating with the Weston IVI controller.
-///
-/// The `IviClient` maintains a connection to the IVI controller over a UNIX domain socket
-/// and provides methods for sending JSON-RPC requests and receiving responses.
-///
-/// # Example
-///
-/// ```no_run
-/// use ivi_client::IviClient;
-///
-/// # fn main() -> ivi_client::Result<()> {
-/// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-/// // Use the client to interact with the IVI controller
-/// client.disconnect()?;
-/// # Ok(())
-/// # }
-/// ```
 pub struct IviClient {
-    /// UNIX domain socket connection to the IVI controller
-    socket: UnixStream,
-
-    /// Frame reader for length-prefixed protocol
-    frame_reader: FrameReader,
+    transport: Option<Box<dyn IviClientTransport>>,
 
     /// Atomic counter for generating unique request IDs
     request_id: AtomicU64,
 }
 
 impl IviClient {
-    /// Connects to the IVI controller at the specified socket path.
-    ///
-    /// # Arguments
-    ///
-    /// * `socket_path` - Path to the UNIX domain socket (e.g., "/tmp/weston-ivi-controller.sock")
-    ///
-    /// # Returns
-    ///
-    /// Returns a connected `IviClient` instance on success, or an error if the connection fails.
-    ///
-    /// # Errors
-    ///
-    /// Returns `IviError::ConnectionFailed` if:
-    /// - The socket file does not exist
-    /// - Permission is denied
-    /// - The connection is refused
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use ivi_client::IviClient;
-    ///
-    /// # fn main() -> ivi_client::Result<()> {
-    /// let client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn connect(socket_path: &str) -> Result<Self> {
-        let socket = UnixStream::connect(socket_path)
-            .map_err(|e| IviError::ConnectionFailed(format!("{}: {}", socket_path, e)))?;
-
-        Ok(Self {
-            socket,
-            frame_reader: FrameReader::new(),
+    pub fn new(remote: Option<&str>) -> Result<Self> {
+        let mut client = IviClient {
+            transport: None,
             request_id: AtomicU64::new(1),
-        })
+        };
+
+        #[cfg(not(feature = "enable-ipcon"))]
+        client.ud_connect(remote)?;
+
+        #[cfg(feature = "enable-ipcon")]
+        client.ipcon_connect(None, remote)?;
+
+        Ok(client)
+    }
+
+    #[cfg(not(feature = "enable-ipcon"))]
+    /// Connect to the IVI controller via a UNIX domain socket at the specified path.
+    /// Ipcon connection is not supported via this method.
+    fn ud_connect(&mut self, socket_path: &str) -> Result<()> {
+        let ud_client = UnixDomainIviClient::connect(socket_path)?;
+        self.transport = Some(Box::new(ud_client));
+        Ok(())
+    }
+
+    #[cfg(feature = "enable-ipcon")]
+    fn ipcon_connect(&mut self, peer: Option<&str>, server: Option<&str>) -> Result<()> {
+        let ipcon_client = IpconIviClient::ipcon_connect(peer, server)?;
+        self.transport = Some(Box::new(ipcon_client));
+        Ok(())
     }
 
     /// Disconnects from the IVI controller and closes the socket.
@@ -102,16 +89,17 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.disconnect()?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn disconnect(self) -> Result<()> {
-        // The socket will be automatically closed when it goes out of scope
-        // We explicitly drop it here for clarity
-        drop(self.socket);
-        Ok(())
+    pub fn disconnect(&mut self) -> Result<()> {
+        if let Some(mut transport) = self.transport.take() {
+            transport.disconnect()
+        } else {
+            Ok(())
+        }
     }
 
     /// Generates the next unique request ID.
@@ -123,6 +111,78 @@ impl IviClient {
     /// Returns a unique u64 request ID.
     fn next_request_id(&self) -> u64 {
         self.request_id.fetch_add(1, Ordering::SeqCst)
+    }
+
+    /// Sends a JSON-RPC request to the IVI controller and receives the response.
+    ///
+    /// This is an internal helper method that handles the low-level communication:
+    /// 1. Generates a unique request ID
+    /// 2. Serializes the request to JSON
+    /// 3. Sends the request over the socket with newline termination
+    /// 4. Receives the response from the socket
+    /// 5. Deserializes and validates the response
+    ///
+    /// # Arguments
+    ///
+    /// * `method` - The JSON-RPC method name to invoke
+    /// * `params` - The parameters to pass to the method as a JSON value
+    ///
+    /// # Returns
+    ///
+    /// Returns the result value from a successful response, or an error if:
+    /// - Serialization fails
+    /// - Network communication fails
+    /// - Deserialization fails
+    /// - The server returns an error response
+    ///
+    /// # Errors
+    ///
+    /// - `IviError::SerializationError` - Failed to serialize the request
+    /// - `IviError::IoError` - Network communication error
+    /// - `IviError::DeserializationError` - Failed to deserialize the response
+    /// - `IviError::RequestFailed` - The server returned an error response
+    pub(crate) fn send_request(&mut self, method: &str, params: Value) -> Result<Value> {
+        // Generate unique request ID
+        let request_id = self.next_request_id();
+
+        // Create JSON-RPC request
+        let request = JsonRpcRequest::new(request_id, method, params);
+
+        // Serialize request to JSON (as bytes for length-prefix protocol)
+        let request_json = serde_json::to_vec(&request)
+            .map_err(|e| IviError::SerializationError(e.to_string()))?;
+
+        let transport = self.transport.as_mut().ok_or_else(|| {
+            IviError::ConnectionFailed("No active connection to send request.".to_string())
+        })?;
+
+        transport.send_request(&request_json)?;
+        let response_buf = transport.receive_response()?;
+
+        // Deserialize response
+        let response: JsonRpcResponse = serde_json::from_slice(&response_buf)
+            .map_err(|e| IviError::DeserializationError(e.to_string()))?;
+
+        // Verify response ID matches request ID
+        if response.id != request_id {
+            return Err(IviError::DeserializationError(format!(
+                "Response ID mismatch: expected {}, got {}",
+                request_id, response.id
+            )));
+        }
+
+        // Check for error response
+        if let Some(error) = response.error {
+            return Err(IviError::RequestFailed {
+                code: error.code,
+                message: error.message,
+            });
+        }
+
+        // Return the result value
+        response.result.ok_or_else(|| {
+            IviError::DeserializationError("Response missing both result and error".to_string())
+        })
     }
 
     /// Lists all available surfaces in the IVI compositor.
@@ -144,7 +204,7 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// let surfaces = client.list_surfaces()?;
     /// for surface in surfaces {
     ///     println!("Surface ID: {}", surface.id);
@@ -195,15 +255,13 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// let surface = client.get_surface(1000)?;
     /// println!("Surface destination rectangle: {}", surface.dest_rect);
     /// # Ok(())
     /// # }
     /// ```
     pub fn get_surface(&mut self, id: u32) -> Result<IviSurface> {
-        use serde_json::json;
-
         let result = self.send_request("get_surface", json!({ "id": id }))?;
 
         // Parse the result as a surface
@@ -236,7 +294,7 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.set_surface_source_rectangle(1000, 0, 0, 1920, 1080, false)?;
     /// # Ok(())
     /// # }
@@ -252,13 +310,16 @@ impl IviClient {
     ) -> Result<()> {
         use serde_json::json;
 
-        self.send_request(
-            "set_surface_source_rectangle",
-            json!({ "id": id, "x": x, "y": y, "width": width, "height": height }),
-        )?;
-        if auto_commit {
-            self.commit()?;
-        }
+        let value = json!({
+            "id": id,
+            "x": x,
+            "y": y,
+            "width": width,
+            "height": height,
+            "auto_commit": auto_commit
+        });
+
+        self.send_request("set_surface_source_rectangle", value)?;
         Ok(())
     }
 
@@ -284,7 +345,7 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.set_surface_destination_rectangle(1000, 100, 200, 1280, 720, false)?;
     /// # Ok(())
     /// # }
@@ -298,16 +359,10 @@ impl IviClient {
         height: i32,
         auto_commit: bool,
     ) -> Result<()> {
-        use serde_json::json;
+        let value = json!({ "id": id, "x": x, "y": y, "width": width, "height": height, "auto_commit": auto_commit });
 
-        self.send_request(
-            "set_surface_destination_rectangle",
-            json!({ "id": id, "x": x, "y": y, "width": width, "height": height }),
-        )?;
-        if auto_commit {
-            self.commit()?;
-        }
-        Ok(())
+        self.send_request("set_surface_destination_rectangle", value)
+            .map(|_| ())
     }
 
     /// Sets the visibility of a surface.
@@ -329,7 +384,7 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.set_surface_visibility(1000, true, false)?;
     /// # Ok(())
     /// # }
@@ -340,16 +395,10 @@ impl IviClient {
         visible: bool,
         auto_commit: bool,
     ) -> Result<()> {
-        use serde_json::json;
+        let value = json!({ "id": id, "visible": visible , "auto_commit": auto_commit});
 
-        self.send_request(
-            "set_surface_visibility",
-            json!({ "id": id, "visible": visible }),
-        )?;
-        if auto_commit {
-            self.commit()?;
-        }
-        Ok(())
+        self.send_request("set_surface_visibility", value)
+            .map(|_| ())
     }
 
     /// Sets the opacity of a surface.
@@ -372,22 +421,15 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.set_surface_opacity(1000, 0.75, false)?;
     /// # Ok(())
     /// # }
     /// ```
     pub fn set_surface_opacity(&mut self, id: u32, opacity: f32, auto_commit: bool) -> Result<()> {
-        use serde_json::json;
+        let value = json!({ "id": id, "opacity": opacity, "auto_commit": auto_commit });
 
-        self.send_request(
-            "set_surface_opacity",
-            json!({ "id": id, "opacity": opacity }),
-        )?;
-        if auto_commit {
-            self.commit()?;
-        }
-        Ok(())
+        self.send_request("set_surface_opacity", value).map(|_| ())
     }
 
     /// Sets the z-order (stacking order) of a surface.
@@ -409,22 +451,14 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.set_surface_z_order(1000, 10, false)?;
     /// # Ok(())
     /// # }
     /// ```
     pub fn set_surface_z_order(&mut self, id: u32, z_order: i32, auto_commit: bool) -> Result<()> {
-        use serde_json::json;
-
-        self.send_request(
-            "set_surface_z_order",
-            json!({ "id": id, "z_order": z_order }),
-        )?;
-        if auto_commit {
-            self.commit()?;
-        }
-        Ok(())
+        let value = json!({ "id": id, "z_order": z_order , "auto_commit": auto_commit });
+        self.send_request("set_surface_z_order", value).map(|_| ())
     }
 
     /// Sets the input focus to a specific surface.
@@ -445,19 +479,14 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.set_surface_focus(1000, false)?;
     /// # Ok(())
     /// # }
     /// ```
     pub fn set_surface_focus(&mut self, id: u32, auto_commit: bool) -> Result<()> {
-        use serde_json::json;
-
-        self.send_request("set_surface_focus", json!({ "id": id }))?;
-        if auto_commit {
-            self.commit()?;
-        }
-        Ok(())
+        let value = json!({ "id": id , "auto_commit": auto_commit });
+        self.send_request("set_surface_focus", value).map(|_| ())
     }
 
     /// Lists all available layers in the IVI compositor.
@@ -479,7 +508,7 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// let layers = client.list_layers()?;
     /// for layer in layers {
     ///     println!("Layer ID: {}", layer.id);
@@ -488,8 +517,6 @@ impl IviClient {
     /// # }
     /// ```
     pub fn list_layers(&mut self) -> Result<Vec<IviLayer>> {
-        use serde_json::json;
-
         let result = self.send_request("list_layers", json!({}))?;
 
         // Extract the "layers" array from the result object
@@ -529,7 +556,7 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// let layer = client.get_layer(2000)?;
     /// println!("Layer visibility: {}", layer.visibility);
     /// # Ok(())
@@ -565,7 +592,7 @@ impl IviClient {
     /// ```no_run
     /// use ivi_client::IviClient;
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.create_layer(2000, 1920, 1080, true)?;
     /// # Ok(())
     /// # }
@@ -577,10 +604,9 @@ impl IviClient {
         height: i32,
         auto_commit: bool,
     ) -> Result<IviRequestResult> {
-        let result = self.send_request(
-            "create_layer",
-            json!({ "id": id, "width": width, "height": height , "auto_commit": auto_commit }),
-        )?;
+        let value =
+            json!({ "id": id, "width": width, "height": height , "auto_commit": auto_commit });
+        let result = self.send_request("create_layer", value)?;
 
         let id = result
             .get("id")
@@ -616,7 +642,7 @@ impl IviClient {
     /// ```no_run
     /// use ivi_client::IviClient;
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.destroy_layer(2000, true)?;
     /// # Ok(())
     /// # }
@@ -651,7 +677,7 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.set_layer_source_rectangle(2000, 0, 0, 1920, 1080, false)?;
     /// # Ok(())
     /// # }
@@ -665,16 +691,10 @@ impl IviClient {
         height: i32,
         auto_commit: bool,
     ) -> Result<()> {
-        use serde_json::json;
+        let value = json!({ "id": id, "x": x, "y": y, "width": width, "height": height, "auto_commit": auto_commit });
 
-        self.send_request(
-            "set_layer_source_rectangle",
-            json!({ "id": id, "x": x, "y": y, "width": width, "height": height }),
-        )?;
-        if auto_commit {
-            self.commit()?;
-        }
-        Ok(())
+        self.send_request("set_layer_source_rectangle", value)
+            .map(|_| ())
     }
 
     /// Sets the destination rectangle of a layer.
@@ -699,7 +719,7 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.set_layer_destination_rectangle(2000, 0, 0, 1920, 1080, false)?;
     /// # Ok(())
     /// # }
@@ -713,15 +733,9 @@ impl IviClient {
         height: i32,
         auto_commit: bool,
     ) -> Result<()> {
-        use serde_json::json;
+        let value = json!({ "id": id, "x": x, "y": y, "width": width, "height": height, "auto_commit": auto_commit });
 
-        self.send_request(
-            "set_layer_destination_rectangle",
-            json!({ "id": id, "x": x, "y": y, "width": width, "height": height }),
-        )?;
-        if auto_commit {
-            self.commit()?;
-        }
+        self.send_request("set_layer_destination_rectangle", value)?;
         Ok(())
     }
 
@@ -744,7 +758,7 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.set_layer_visibility(2000, true, false)?;
     /// # Ok(())
     /// # }
@@ -755,16 +769,9 @@ impl IviClient {
         visible: bool,
         auto_commit: bool,
     ) -> Result<()> {
-        use serde_json::json;
+        let value = json!({ "id": id, "visible": visible , "auto_commit": auto_commit });
 
-        self.send_request(
-            "set_layer_visibility",
-            json!({ "id": id, "visible": visible }),
-        )?;
-        if auto_commit {
-            self.commit()?;
-        }
-        Ok(())
+        self.send_request("set_layer_visibility", value).map(|_| ())
     }
 
     /// Sets the opacity of a layer.
@@ -787,19 +794,15 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// client.set_layer_opacity(2000, 0.75, false)?;
     /// # Ok(())
     /// # }
     /// ```
     pub fn set_layer_opacity(&mut self, id: u32, opacity: f32, auto_commit: bool) -> Result<()> {
-        use serde_json::json;
+        let value = json!({ "id": id, "opacity": opacity, "auto_commit": auto_commit });
 
-        self.send_request("set_layer_opacity", json!({ "id": id, "opacity": opacity }))?;
-        if auto_commit {
-            self.commit()?;
-        }
-        Ok(())
+        self.send_request("set_layer_opacity", value).map(|_| ())
     }
 
     /// Lists all available screens (outputs) in the IVI compositor.
@@ -812,8 +815,6 @@ impl IviClient {
     ///
     /// Returns an error if communication with the controller fails.
     pub fn list_screens(&mut self) -> Result<Vec<IviScreen>> {
-        use serde_json::json;
-
         let response = self.send_request("list_screens", json!({}))?;
         let screens: Vec<IviScreen> = serde_json::from_value(response["screens"].clone())
             .map_err(|e| IviError::DeserializationError(e.to_string()))?;
@@ -834,8 +835,6 @@ impl IviClient {
     ///
     /// Returns an error if the screen is not found or communication fails.
     pub fn get_screen(&mut self, name: &str) -> Result<IviScreen> {
-        use serde_json::json;
-
         let response = self.send_request("get_screen", json!({ "name": name }))?;
         let screen: IviScreen = serde_json::from_value(response)
             .map_err(|e| IviError::DeserializationError(e.to_string()))?;
@@ -856,8 +855,6 @@ impl IviClient {
     ///
     /// Returns an error if the screen is not found or communication fails.
     pub fn get_screen_layers(&mut self, screen_name: &str) -> Result<Vec<u32>> {
-        use serde_json::json;
-
         let response =
             self.send_request("get_screen_layers", json!({ "screen_name": screen_name }))?;
         let layer_ids: Vec<u32> = serde_json::from_value(response["layer_ids"].clone())
@@ -879,8 +876,6 @@ impl IviClient {
     ///
     /// Returns an error if the layer is not found or communication fails.
     pub fn get_layer_screens(&mut self, layer_id: u32) -> Result<Vec<String>> {
-        use serde_json::json;
-
         let response = self.send_request("get_layer_screens", json!({ "layer_id": layer_id }))?;
         let screen_names: Vec<String> = serde_json::from_value(response["screen_names"].clone())
             .map_err(|e| IviError::DeserializationError(e.to_string()))?;
@@ -911,8 +906,6 @@ impl IviClient {
         layer_ids: &[u32],
         auto_commit: bool,
     ) -> Result<()> {
-        use serde_json::json;
-
         self.send_request(
             "add_layers_to_screen",
             json!({
@@ -920,8 +913,8 @@ impl IviClient {
                 "layer_ids": layer_ids,
                 "auto_commit": auto_commit
             }),
-        )?;
-        Ok(())
+        )
+        .map(|_| ())
     }
 
     /// Removes a layer from a screen.
@@ -945,8 +938,6 @@ impl IviClient {
         layer_id: u32,
         auto_commit: bool,
     ) -> Result<()> {
-        use serde_json::json;
-
         self.send_request(
             "remove_layer_from_screen",
             json!({
@@ -954,8 +945,8 @@ impl IviClient {
                 "layer_id": layer_id,
                 "auto_commit": auto_commit
             }),
-        )?;
-        Ok(())
+        )
+        .map(|_| ())
     }
 
     /// Sets the complete list of surfaces on a layer, replacing any existing surfaces.
@@ -983,8 +974,6 @@ impl IviClient {
         surface_ids: &[u32],
         auto_commit: bool,
     ) -> Result<()> {
-        use serde_json::json;
-
         self.send_request(
             "set_layer_surfaces",
             json!({
@@ -992,8 +981,8 @@ impl IviClient {
                 "surface_ids": surface_ids,
                 "auto_commit": auto_commit
             }),
-        )?;
-        Ok(())
+        )
+        .map(|_| ())
     }
 
     /// Adds a single surface to a layer as the topmost surface.
@@ -1019,8 +1008,6 @@ impl IviClient {
         surface_id: u32,
         auto_commit: bool,
     ) -> Result<()> {
-        use serde_json::json;
-
         self.send_request(
             "add_surface_to_layer",
             json!({
@@ -1028,8 +1015,8 @@ impl IviClient {
                 "surface_id": surface_id,
                 "auto_commit": auto_commit
             }),
-        )?;
-        Ok(())
+        )
+        .map(|_| ())
     }
 
     /// Removes a surface from a layer.
@@ -1053,8 +1040,6 @@ impl IviClient {
         surface_id: u32,
         auto_commit: bool,
     ) -> Result<()> {
-        use serde_json::json;
-
         self.send_request(
             "remove_surface_from_layer",
             json!({
@@ -1062,8 +1047,8 @@ impl IviClient {
                 "surface_id": surface_id,
                 "auto_commit": auto_commit
             }),
-        )?;
-        Ok(())
+        )
+        .map(|_| ())
     }
 
     /// Gets the list of surface IDs currently assigned to a layer.
@@ -1084,8 +1069,6 @@ impl IviClient {
     ///
     /// Returns an error if the layer is not found or communication fails.
     pub fn get_layer_surfaces(&mut self, layer_id: u32) -> Result<Vec<u32>> {
-        use serde_json::json;
-
         let response = self.send_request("get_layer_surfaces", json!({ "layer_id": layer_id }))?;
         let surface_ids: Vec<u32> = serde_json::from_value(response["surface_ids"].clone())
             .map_err(|e| IviError::DeserializationError(e.to_string()))?;
@@ -1114,7 +1097,7 @@ impl IviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     ///
     /// // Make multiple changes
     /// client.set_surface_destination_rectangle(1000, 100, 200, 1920, 1080, false)?;
@@ -1126,145 +1109,6 @@ impl IviClient {
     /// # }
     /// ```
     pub fn commit(&mut self) -> Result<()> {
-        use serde_json::json;
-
-        self.send_request("commit", json!({}))?;
-        Ok(())
-    }
-
-    /// Sends a JSON-RPC request to the IVI controller and receives the response.
-    ///
-    /// This is an internal helper method that handles the low-level communication:
-    /// 1. Generates a unique request ID
-    /// 2. Serializes the request to JSON
-    /// 3. Sends the request over the socket with newline termination
-    /// 4. Receives the response from the socket
-    /// 5. Deserializes and validates the response
-    ///
-    /// # Arguments
-    ///
-    /// * `method` - The JSON-RPC method name to invoke
-    /// * `params` - The parameters to pass to the method as a JSON value
-    ///
-    /// # Returns
-    ///
-    /// Returns the result value from a successful response, or an error if:
-    /// - Serialization fails
-    /// - Network communication fails
-    /// - Deserialization fails
-    /// - The server returns an error response
-    ///
-    /// # Errors
-    ///
-    /// - `IviError::SerializationError` - Failed to serialize the request
-    /// - `IviError::IoError` - Network communication error
-    /// - `IviError::DeserializationError` - Failed to deserialize the response
-    /// - `IviError::RequestFailed` - The server returned an error response
-    pub(crate) fn send_request(&mut self, method: &str, params: Value) -> Result<Value> {
-        // Generate unique request ID
-        let request_id = self.next_request_id();
-
-        // Create JSON-RPC request
-        let request = JsonRpcRequest::new(request_id, method, params);
-
-        // Serialize request to JSON (as bytes for length-prefix protocol)
-        let request_json = serde_json::to_vec(&request)
-            .map_err(|e| IviError::SerializationError(e.to_string()))?;
-
-        // Send request using shared framing module
-        write_frame(&mut self.socket, &request_json).map_err(IviError::IoError)?;
-
-        // Read response using shared framing module
-        let response_buf = loop {
-            match self.frame_reader.read_frame(&mut self.socket)? {
-                FrameReadResult::Complete(msg) => break msg,
-                FrameReadResult::NeedMore => {
-                    // Partial read, continue reading
-                    std::thread::yield_now();
-                    continue;
-                }
-                FrameReadResult::Eof => {
-                    return Err(IviError::IoError(std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "Connection closed while reading response",
-                    )));
-                }
-            }
-        };
-
-        // Deserialize response
-        let response: JsonRpcResponse = serde_json::from_slice(&response_buf)
-            .map_err(|e| IviError::DeserializationError(e.to_string()))?;
-
-        // Verify response ID matches request ID
-        if response.id != request_id {
-            return Err(IviError::DeserializationError(format!(
-                "Response ID mismatch: expected {}, got {}",
-                request_id, response.id
-            )));
-        }
-
-        // Check for error response
-        if let Some(error) = response.error {
-            return Err(IviError::RequestFailed {
-                code: error.code,
-                message: error.message,
-            });
-        }
-
-        // Return the result value
-        response.result.ok_or_else(|| {
-            IviError::DeserializationError("Response missing both result and error".to_string())
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_socket_path() {
-        assert_eq!(DEFAULT_SOCKET_PATH, "/tmp/weston-ivi-controller.sock");
-    }
-
-    #[test]
-    fn test_request_id_generation() {
-        let client = IviClient {
-            socket: UnixStream::pair().unwrap().0,
-            frame_reader: FrameReader::new(),
-            request_id: AtomicU64::new(1),
-        };
-
-        assert_eq!(client.next_request_id(), 1);
-        assert_eq!(client.next_request_id(), 2);
-        assert_eq!(client.next_request_id(), 3);
-    }
-
-    #[test]
-    fn test_request_id_uniqueness() {
-        let client = IviClient {
-            socket: UnixStream::pair().unwrap().0,
-            frame_reader: FrameReader::new(),
-            request_id: AtomicU64::new(100),
-        };
-
-        let mut ids = std::collections::HashSet::new();
-        for _ in 0..1000 {
-            let id = client.next_request_id();
-            assert!(ids.insert(id), "Duplicate request ID generated: {}", id);
-        }
-    }
-
-    #[test]
-    fn test_connect_invalid_path() {
-        let result = IviClient::connect("/nonexistent/path/to/socket.sock");
-        assert!(result.is_err());
-
-        if let Err(IviError::ConnectionFailed(msg)) = result {
-            assert!(msg.contains("/nonexistent/path/to/socket.sock"));
-        } else {
-            panic!("Expected ConnectionFailed error");
-        }
+        self.send_request("commit", json!({})).map(|_| ())
     }
 }

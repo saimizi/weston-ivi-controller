@@ -1,8 +1,9 @@
+#![allow(dead_code)]
+
 //! Output formatting utilities for the CLI
 //!
 //! This module provides functions to format CLI output in a consistent,
 //! human-readable manner.
-
 use ivi_client::{IviLayer, IviScreen, IviSurface};
 
 /// Format a list of surface IDs as a comma-separated string
@@ -529,13 +530,13 @@ mod properties_tests {
     }
 }
 
-/// Format a success message with a checkmark
+/// Format a success message with a check mark
 ///
 /// # Arguments
 /// * `message` - The success message to format
 ///
 /// # Returns
-/// A formatted success message with a checkmark prefix
+/// A formatted success message with a check mark prefix
 ///
 /// # Examples
 /// ```

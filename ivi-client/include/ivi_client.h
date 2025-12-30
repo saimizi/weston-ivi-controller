@@ -58,28 +58,9 @@ typedef enum IviOrientation {
     FLIPPED270 = 7,
 } IviOrientation;
 
-/*
- Client for communicating with the Weston IVI controller.
-
- The `IviClient` maintains a connection to the IVI controller over a UNIX domain socket
- and provides methods for sending JSON-RPC requests and receiving responses.
-
- # Example
-
- ```no_run
- use ivi_client::IviClient;
-
- # fn main() -> ivi_client::Result<()> {
- let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
- // Use the client to interact with the IVI controller
- client.disconnect()?;
- # Ok(())
- # }
- ```
- */
 typedef struct IviClient IviClient;
 
-typedef uint32_t SuffaceId;
+typedef uint32_t SurfaceId;
 
 typedef struct IviSize {
     int32_t width;
@@ -97,7 +78,7 @@ typedef struct Rectangle {
  C-compatible surface structure
  */
 typedef struct IviSurface {
-    SuffaceId id;
+    SurfaceId id;
     struct IviSize orig_size;
     struct Rectangle src_rect;
     struct Rectangle dest_rect;
@@ -134,9 +115,7 @@ typedef struct IviLayer {
  Returns a pointer to an IviClient on success, or NULL on failure.
  If NULL is returned, the error message is written to `error_buf`.
  */
-struct IviClient *ivi_client_connect(const char *socket_path,
-                                     char *error_buf,
-                                     uintptr_t error_buf_len);
+struct IviClient *ivi_client_connect(const char *remote, char *error_buf, uintptr_t error_buf_len);
 
 /*
  Disconnect from the IVI controller and free the client
