@@ -26,7 +26,7 @@ fn run_example() -> Result<()> {
     let socket_path = std::env::var("IVI_SOCKET")
         .unwrap_or_else(|_| "/tmp/weston-ivi-controller.sock".to_string());
 
-    let mut client = match IviClient::connect(&socket_path) {
+    let mut client = match IviClient::new(Some(&socket_path)) {
         Ok(client) => {
             println!("✓ Connected to {}\n", socket_path);
             client

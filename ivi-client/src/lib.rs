@@ -22,7 +22,7 @@
 //!
 //! fn main() -> Result<()> {
 //!     // Connect to the IVI controller
-//!     let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+//!     let mut client = IviClient::new(None)?;
 //!     
 //!     // List all surfaces
 //!     let surfaces = client.list_surfaces()?;

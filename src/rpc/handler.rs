@@ -167,13 +167,6 @@ impl RpcHandler {
             }
         };
 
-        // Check if auto_commit is requested (default: false for batching)
-        let auto_commit = request
-            .params
-            .get("auto_commit")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
         // Route to the appropriate handler
         let result = match method {
             RpcMethod::ListSurfaces => self.handle_list_surfaces(),
@@ -184,6 +177,7 @@ impl RpcHandler {
                 y,
                 width,
                 height,
+                auto_commit,
             } => self.handle_set_surface_source_rectangle(id, x, y, width, height, auto_commit),
             RpcMethod::SetSurfaceDestinationRectangle {
                 id,
@@ -191,19 +185,28 @@ impl RpcHandler {
                 y,
                 width,
                 height,
+                auto_commit,
             } => {
                 self.handle_set_surface_destination_rectangle(id, x, y, width, height, auto_commit)
             }
-            RpcMethod::SetSurfaceVisibility { id, visible } => {
-                self.handle_set_surface_visibility(id, visible, auto_commit)
+            RpcMethod::SetSurfaceVisibility {
+                id,
+                visible,
+                auto_commit,
+            } => self.handle_set_surface_visibility(id, visible, auto_commit),
+            RpcMethod::SetSurfaceOpacity {
+                id,
+                opacity,
+                auto_commit,
+            } => self.handle_set_surface_opacity(id, opacity, auto_commit),
+            RpcMethod::SetSurfaceZOrder {
+                id,
+                z_order,
+                auto_commit,
+            } => self.handle_set_surface_z_order(id, z_order, auto_commit),
+            RpcMethod::SetSurfaceFocus { id, auto_commit } => {
+                self.handle_set_surface_focus(id, auto_commit)
             }
-            RpcMethod::SetSurfaceOpacity { id, opacity } => {
-                self.handle_set_surface_opacity(id, opacity, auto_commit)
-            }
-            RpcMethod::SetSurfaceZOrder { id, z_order } => {
-                self.handle_set_surface_z_order(id, z_order, auto_commit)
-            }
-            RpcMethod::SetSurfaceFocus { id } => self.handle_set_surface_focus(id, auto_commit),
             RpcMethod::Commit => self.handle_commit(),
 
             // Subscription methods
@@ -215,10 +218,15 @@ impl RpcHandler {
 
             // Layer methods
             RpcMethod::ListLayers => self.handle_list_layers(),
-            RpcMethod::CreateLayer { id, width, height } => {
-                self.handle_create_layer(id, width, height, auto_commit)
+            RpcMethod::CreateLayer {
+                id,
+                width,
+                height,
+                auto_commit,
+            } => self.handle_create_layer(id, width, height, auto_commit),
+            RpcMethod::DestroyLayer { id, auto_commit } => {
+                self.handle_destroy_layer(id, auto_commit)
             }
-            RpcMethod::DestroyLayer { id } => self.handle_destroy_layer(id, auto_commit),
             RpcMethod::GetLayer { id } => self.handle_get_layer(id),
             RpcMethod::SetLayerSourceRectangle {
                 id,
@@ -226,6 +234,7 @@ impl RpcHandler {
                 y,
                 width,
                 height,
+                auto_commit,
             } => self.handle_set_layer_source_rectangle(id, x, y, width, height, auto_commit),
             RpcMethod::SetLayerDestinationRectangle {
                 id,
@@ -233,13 +242,18 @@ impl RpcHandler {
                 y,
                 width,
                 height,
+                auto_commit,
             } => self.handle_set_layer_destination_rectangle(id, x, y, width, height, auto_commit),
-            RpcMethod::SetLayerVisibility { id, visible } => {
-                self.handle_set_layer_visibility(id, visible, auto_commit)
-            }
-            RpcMethod::SetLayerOpacity { id, opacity } => {
-                self.handle_set_layer_opacity(id, opacity, auto_commit)
-            }
+            RpcMethod::SetLayerVisibility {
+                id,
+                visible,
+                auto_commit,
+            } => self.handle_set_layer_visibility(id, visible, auto_commit),
+            RpcMethod::SetLayerOpacity {
+                id,
+                opacity,
+                auto_commit,
+            } => self.handle_set_layer_opacity(id, opacity, auto_commit),
             // Layer-surface assignment operations
             RpcMethod::SetLayerSurfaces {
                 layer_id,

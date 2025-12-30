@@ -8,11 +8,23 @@ description = "Client library for Weston IVI Controller with Rust and C APIs"
 [lib]
 crate-type = ["rlib", "staticlib", "cdylib"]
 
+[features]
+default = []
+# Enable IPCON transport (propagates to weston-ivi-controller)
+enable-ipcon = [
+  "ipcon-sys/async",
+  "ipcon-sys/futures",
+  "ipcon-sys/tokio",
+  "weston-ivi-controller/enable-ipcon",
+]
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 weston-ivi-controller = { path = "..", features = [] }
+jlogger-tracing = { workspace = true }
+ipcon-sys = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = "1.4"

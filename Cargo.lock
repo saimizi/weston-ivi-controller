@@ -576,6 +576,8 @@ name = "ivi-client"
 version = "0.1.0"
 dependencies = [
  "cbindgen",
+ "ipcon-sys",
+ "jlogger-tracing",
  "proptest",
  "serde",
  "serde_json",

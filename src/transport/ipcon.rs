@@ -43,8 +43,8 @@ pub struct IpconTransport {
     running: Arc<AtomicBool>,
 }
 
-const DEFAULT_WESTON_IVI_CONTROLLER_PEER: &str = "weston-ivi-controller";
-const DEFAULT_WESTON_IVI_CONTROLLER_GROUP: &str = "weston-ivi-controller-events";
+pub const DEFAULT_WESTON_IVI_CONTROLLER_PEER: &str = "weston-ivi-controller";
+pub const DEFAULT_WESTON_IVI_CONTROLLER_GROUP: &str = "weston-ivi-controller-events";
 
 impl IpconTransport {
     /// Create a new IPCON transport
