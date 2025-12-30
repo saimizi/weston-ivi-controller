@@ -62,7 +62,7 @@ impl IviClient {
     #[cfg(not(feature = "enable-ipcon"))]
     /// Connect to the IVI controller via a UNIX domain socket at the specified path.
     /// Ipcon connection is not supported via this method.
-    fn ud_connect(&mut self, socket_path: &str) -> Result<()> {
+    fn ud_connect(&mut self, socket_path: Option<&str>) -> Result<()> {
         let ud_client = UnixDomainIviClient::connect(socket_path)?;
         self.transport = Some(Box::new(ud_client));
         Ok(())

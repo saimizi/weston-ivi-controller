@@ -1,11 +1,6 @@
-use super::{IviClientTransport, IviRequestResult};
+use super::IviClientTransport;
 use crate::error::{IviError, Result};
-use crate::ffi::*;
-use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
-use serde_json::json;
-use serde_json::Value;
 use std::os::unix::net::UnixStream;
-use std::sync::atomic::{AtomicU64, Ordering};
 use weston_ivi_controller::rpc::framing::{write_frame, FrameReadResult, FrameReader};
 
 /// Default socket path for the IVI controller
@@ -22,7 +17,7 @@ pub const DEFAULT_SOCKET_PATH: &str = "/tmp/weston-ivi-controller.sock";
 /// use ivi_client::IviClient;
 ///
 /// # fn main() -> ivi_client::Result<()> {
-/// let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+/// let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
 /// // Use the client to interact with the IVI controller
 /// client.disconnect()?;
 /// # Ok(())
@@ -60,11 +55,12 @@ impl UnixDomainIviClient {
     /// use ivi_client::IviClient;
     ///
     /// # fn main() -> ivi_client::Result<()> {
-    /// let client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    /// let client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn connect(socket_path: &str) -> Result<Self> {
+    pub fn connect(socket_path: Option<&str>) -> Result<Self> {
+        let socket_path = socket_path.unwrap_or(DEFAULT_SOCKET_PATH);
         let socket = UnixStream::connect(socket_path)
             .map_err(|e| IviError::ConnectionFailed(format!("{}: {}", socket_path, e)))?;
 

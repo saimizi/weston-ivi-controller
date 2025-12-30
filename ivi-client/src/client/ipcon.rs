@@ -7,7 +7,7 @@ use super::IviClientTransport;
 use crate::error::{IviError, Result};
 #[allow(unused_imports)]
 use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
-use std::io::{Error as stdIoError, ErrorKind as stdIoErrorKind};
+use std::io::Error as stdIoError;
 use std::sync::{Arc, Mutex};
 use weston_ivi_controller::transport::ipcon::DEFAULT_WESTON_IVI_CONTROLLER_GROUP;
 use weston_ivi_controller::transport::ipcon::DEFAULT_WESTON_IVI_CONTROLLER_PEER;
@@ -49,7 +49,7 @@ impl IviClientTransport for IpconIviClient {
         let ih = self.ih.lock().unwrap();
 
         ih.send_unicast_msg(DEFAULT_WESTON_IVI_CONTROLLER_PEER, request)
-            .map_err(|e| IviError::IoError(stdIoError::new(stdIoErrorKind::Other, e)))?;
+            .map_err(|e| IviError::IoError(stdIoError::other(e)))?;
         Ok(())
     }
 
@@ -69,7 +69,7 @@ impl IviClientTransport for IpconIviClient {
         loop {
             let msg = ih
                 .receive_msg()
-                .map_err(|e| IviError::IoError(stdIoError::new(stdIoErrorKind::Other, e)))?;
+                .map_err(|e| IviError::IoError(stdIoError::other(e)))?;
 
             if let IpconMsg::IpconMsgUser(body) = msg {
                 if body.msg_type == IpconMsgType::IpconMsgTypeNormal

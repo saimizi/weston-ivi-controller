@@ -9,7 +9,7 @@ description = "Client library for Weston IVI Controller with Rust and C APIs"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [features]
-default = ["enable-ipcon"]
+default = []
 # Enable IPCON transport (propagates to weston-ivi-controller)
 enable-ipcon = [
   "ipcon-sys/async",
