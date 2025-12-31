@@ -24,6 +24,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 weston-ivi-controller = { path = "..", features = [] }
 jlogger-tracing = { workspace = true }
+tracing = { workspace = true }
 ipcon-sys = { workspace = true, optional = true }
 
 [dev-dependencies]
