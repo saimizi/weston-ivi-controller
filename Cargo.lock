@@ -569,6 +569,8 @@ version = "0.1.0"
 dependencies = [
  "clap 4.5.53",
  "ivi-client",
+ "jlogger-tracing",
+ "tracing",
 ]
 
 [[package]]
@@ -582,6 +584,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tracing",
  "weston-ivi-controller",
 ]
 

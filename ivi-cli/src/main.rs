@@ -5,8 +5,10 @@
 
 mod output;
 
-use clap::{Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand};
 use ivi_client::{IviClient, IviError, Result};
+#[allow(unused_imports)]
+use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter, LogTimeFormat};
 use std::result::Result as StdResult;
 
 /// Command-line interface for Weston IVI Controller
@@ -18,6 +20,18 @@ use std::result::Result as StdResult;
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+
+    /// logging enable
+    #[arg(short, long, default_value_t = false)]
+    log: bool,
+
+    /// Log file path
+    #[arg(long, default_value = "/tmp/ivi_cli.log")]
+    log_file: String,
+
+    /// Verbosity level (can be used multiple times for increased verbosity)
+    #[arg(short = 'v', long = "verbose", action = ArgAction::Count)]
+    pub verbose: u8,
 }
 
 /// Available commands
@@ -500,6 +514,9 @@ impl IviCli {
 
     /// Handle hierarchical scene command
     fn handle_scene(&mut self) -> Result<String> {
+        jinfo!("Building hierarchical scene representation");
+
+        jdebug!("Fetching screens from IVI Controller");
         // Get all screens
         let screens = self.client.list_screens()?;
         let mut hierarchy = Vec::new();
@@ -538,6 +555,23 @@ impl IviCli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let mut ivi_cli = IviCli::new(None)?;
+
+    if cli.log {
+        let log_level = match cli.verbose {
+            0 => LevelFilter::INFO,
+            1 => LevelFilter::DEBUG,
+            2.. => LevelFilter::TRACE,
+        };
+
+        JloggerBuilder::new()
+            .log_console(false)
+            .log_file(Some((cli.log_file.as_str(), false)))
+            .log_time(LogTimeFormat::TimeLocal)
+            .max_level(log_level)
+            .build();
+    }
+
+    jinfo!("Starting IVI CLI");
 
     match cli.command {
         Commands::Surface { command } => match command {

@@ -371,8 +371,11 @@ unsafe fn plugin_init_impl(
         return Err(format!("Invalid plugin configuration: {}", e));
     }
 
-    jinfo!("Using socket path: {:?}", config.socket_path);
-    jinfo!("Max connections: {}", config.max_connections);
+    #[cfg(not(feature = "enable-ipcon"))]
+    {
+        jinfo!("Using socket path: {:?}", config.socket_path);
+        jinfo!("Max connections: {}", config.max_connections);
+    }
     jinfo!(
         "ID assignment range: {:#x} - {:#x}",
         config.id_assignment.start_id,
@@ -430,7 +433,7 @@ unsafe fn plugin_init_impl(
             format!("Failed to register transport: {:?}", e)
         })?;
 
-        jinfo!("Transport registered");
+        jinfo!("Ipcon Transport registered");
     }
 
     #[cfg(not(feature = "enable-ipcon"))]
@@ -447,7 +450,7 @@ unsafe fn plugin_init_impl(
             format!("Failed to register transport: {:?}", e)
         })?;
 
-        jinfo!("Transport registered");
+        jinfo!("UnixDomainSocket Transport registered");
     }
 
     // Create ID assignment manager with parsed configuration

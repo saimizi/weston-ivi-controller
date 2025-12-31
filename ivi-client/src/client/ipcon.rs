@@ -6,11 +6,13 @@ use ipcon_sys::{
 use super::IviClientTransport;
 use crate::error::{IviError, Result};
 #[allow(unused_imports)]
-use jlogger_tracing::{jdebug, jerror, jinfo, jwarn, JloggerBuilder, LevelFilter};
+use jlogger_tracing::{jdebug, jerror, jinfo, jtrace, jwarn, JloggerBuilder, LevelFilter};
 use std::io::Error as stdIoError;
 use std::sync::{Arc, Mutex};
 use weston_ivi_controller::transport::ipcon::DEFAULT_WESTON_IVI_CONTROLLER_GROUP;
 use weston_ivi_controller::transport::ipcon::DEFAULT_WESTON_IVI_CONTROLLER_PEER;
+
+const DEFAULT_RECEIVE_TIMEOUT_MS: u32 = 500; // 500 ms
 
 pub struct IpconIviClient {
     // Fields for IP connection client
@@ -50,6 +52,12 @@ impl IviClientTransport for IpconIviClient {
 
         ih.send_unicast_msg(DEFAULT_WESTON_IVI_CONTROLLER_PEER, request)
             .map_err(|e| IviError::IoError(stdIoError::other(e)))?;
+
+        jtrace!(
+            "Sent request to IPCON peer: {}",
+            DEFAULT_WESTON_IVI_CONTROLLER_PEER
+        );
+
         Ok(())
     }
 
@@ -68,7 +76,7 @@ impl IviClientTransport for IpconIviClient {
 
         loop {
             let msg = ih
-                .receive_msg()
+                .receive_msg_timeout(0, DEFAULT_RECEIVE_TIMEOUT_MS * 1000)
                 .map_err(|e| IviError::IoError(stdIoError::other(e)))?;
 
             if let IpconMsg::IpconMsgUser(body) = msg {

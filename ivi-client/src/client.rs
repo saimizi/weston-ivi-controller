@@ -13,7 +13,7 @@ use crate::error::{IviError, Result};
 use crate::ffi::*;
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
 #[allow(unused)]
-use jlogger_tracing::{jdebug, jerror, jinfo, jwarn};
+use jlogger_tracing::{jdebug, jerror, jinfo, jtrace, jwarn};
 use serde_json::json;
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -148,6 +148,13 @@ impl IviClient {
         // Create JSON-RPC request
         let request = JsonRpcRequest::new(request_id, method, params);
 
+        jtrace!(
+            event = "ivi_client_send_request",
+            request_id = request_id,
+            method = method,
+            request = format!("{:?}", request.params)
+        );
+
         // Serialize request to JSON (as bytes for length-prefix protocol)
         let request_json = serde_json::to_vec(&request)
             .map_err(|e| IviError::SerializationError(e.to_string()))?;
@@ -162,6 +169,21 @@ impl IviClient {
         // Deserialize response
         let response: JsonRpcResponse = serde_json::from_slice(&response_buf)
             .map_err(|e| IviError::DeserializationError(e.to_string()))?;
+
+        jtrace!(
+            event = "ivi_client_receive_response",
+            request_id = request_id,
+            result = response
+                .result
+                .as_ref()
+                .map(|r| format!("{:?}", r))
+                .unwrap_or("None".to_string()),
+            error = response
+                .error
+                .as_ref()
+                .map(|e| format!("{:?}", e))
+                .unwrap_or("None".to_string()),
+        );
 
         // Verify response ID matches request ID
         if response.id != request_id {

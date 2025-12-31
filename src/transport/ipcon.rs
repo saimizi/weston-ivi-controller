@@ -8,6 +8,7 @@
 
 use ipcon_sys::{
     ipcon::{Ipcon, IPF_DEFAULT},
+    ipcon_error::IpconError,
     ipcon_msg::{IpconMsg, IpconMsgType},
 };
 #[allow(unused)]
@@ -43,6 +44,26 @@ pub struct IpconTransport {
     running: Arc<AtomicBool>,
 }
 
+fn dump_ipcon_msg(msg: &IpconMsg) -> String {
+    match msg {
+        IpconMsg::IpconMsgUser(data) => {
+            format!(
+                "IpconMsgUser(peer: {}, msg_type: {:?}, buf_len: {})",
+                data.peer,
+                data.msg_type,
+                data.buf.len()
+            )
+        }
+        IpconMsg::IpconMsgKevent(kevent) => {
+            format!(
+                "IpconMsgKevent: {}",
+                kevent.get_string().unwrap_or_else(|e| e.to_string()),
+            )
+        }
+        IpconMsg::IpconMsgInvalid => "IpconMsgInvalid".to_string(),
+    }
+}
+
 pub const DEFAULT_WESTON_IVI_CONTROLLER_PEER: &str = "weston-ivi-controller";
 pub const DEFAULT_WESTON_IVI_CONTROLLER_GROUP: &str = "weston-ivi-controller-events";
 
@@ -63,6 +84,8 @@ impl IpconTransport {
             jerror!("Failed to create IPCON transport: {}", e);
             TransportError::InitError(format!("Failed to create IPCON transport: {}", e))
         })?;
+
+        jinfo!("IPCON transport created with peer name: {}", peer);
 
         ih.register_group(DEFAULT_WESTON_IVI_CONTROLLER_GROUP)
             .map_err(|e| {
@@ -93,6 +116,7 @@ impl IpconTransport {
         clients: Arc<Mutex<Vec<ClientId>>>,
         should_run: Arc<AtomicBool>,
     ) -> Result<(), TransportError> {
+        jinfo!("IPCON transport event loop started");
         loop {
             if !should_run.load(std::sync::atomic::Ordering::SeqCst) {
                 jinfo!("IPCON transport event loop stopping");
@@ -109,9 +133,26 @@ impl IpconTransport {
                 });
 
                 // Wait for a message with a timeout to allow checking the running flag
-                msg = ih.receive_msg_timeout(1, 0).map_err(|e| {
-                    TransportError::ReceiveError(format!("Failed to receive IPCON message: {}", e))
-                })?;
+                match ih.receive_msg_timeout(1, 0) {
+                    Ok(m) => msg = m,
+                    Err(e) => {
+                        match e.downcast_ref::<IpconError>().unwrap() {
+                            IpconError::SysErrorTimeOut => {
+                                // Timeout is expected, continue the loop
+                                continue;
+                            }
+                            _ => {
+                                jerror!("Error receiving IPCON message: {}", e);
+                                return Err(TransportError::ReceiveError(format!(
+                                    "Error receiving IPCON message: {}",
+                                    e
+                                )));
+                            }
+                        }
+                    }
+                }
+
+                jdebug!("Received IPCON message: {:}", dump_ipcon_msg(&msg));
             }
 
             match msg {

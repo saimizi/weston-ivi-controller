@@ -14,5 +14,7 @@ path = "src/main.rs"
 enable-ipcon = ["ivi-client/enable-ipcon"]
 
 [dependencies]
+jlogger-tracing = { workspace = true }
+tracing = { workspace = true }
 ivi-client = { path = "../ivi-client" }
 clap = { version = "4.5", features = ["derive"] }
