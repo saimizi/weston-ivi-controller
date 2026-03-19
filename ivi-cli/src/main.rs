@@ -84,7 +84,7 @@ enum SurfaceCommands {
         opacity: f32,
     },
     /// Set surface source rectangle (which part of buffer to display)
-    SetSourceRect {
+    SetSrcRect {
         /// Surface ID
         id: u32,
         /// X coordinate in buffer
@@ -148,7 +148,7 @@ enum LayerCommands {
         id: u32,
     },
     /// Set layer source rectangle
-    SetSourceRect {
+    SetSrcRect {
         /// Layer ID
         id: u32,
         /// X coordinate
@@ -583,7 +583,7 @@ fn main() -> Result<()> {
             SurfaceCommands::SetOpacity { id, opacity } => {
                 ivi_cli.handle_surface_set_opacity(id, opacity)
             }
-            SurfaceCommands::SetSourceRect {
+            SurfaceCommands::SetSrcRect {
                 id,
                 x,
                 y,
@@ -609,7 +609,7 @@ fn main() -> Result<()> {
                 ivi_cli.handle_layer_create_layer(id, width, height)
             }
             LayerCommands::Destroy { id } => ivi_cli.handle_layer_destroy(id),
-            LayerCommands::SetSourceRect {
+            LayerCommands::SetSrcRect {
                 id,
                 x,
                 y,
