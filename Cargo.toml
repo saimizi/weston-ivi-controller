@@ -10,7 +10,7 @@ mio = { version = "0.8", features = ["os-poll", "net"] }
 jlogger-tracing = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-lazy_static = "1.4"
+lazy_static = "1.5"
 ipcon-sys = { version = "0.2.3", features = ["async", "futures", "tokio"] }
 
 [package]
@@ -47,4 +47,4 @@ ipcon-sys = { workspace = true, optional = true }
 bindgen = "0.69"
 
 [dev-dependencies]
-proptest = "1.4"
+proptest = "1.10"
