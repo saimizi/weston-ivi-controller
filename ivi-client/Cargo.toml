@@ -28,7 +28,7 @@ tracing = { workspace = true }
 ipcon-sys = { workspace = true, optional = true }
 
 [dev-dependencies]
-proptest = "1.4"
+proptest = "1.10"
 
 [build-dependencies]
 cbindgen = "0.26"
