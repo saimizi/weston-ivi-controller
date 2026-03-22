@@ -1230,9 +1230,7 @@ impl NotificationListener {
         }
 
         response.result.ok_or_else(|| {
-            IviError::DeserializationError(
-                "Response missing both result and error".to_string(),
-            )
+            IviError::DeserializationError("Response missing both result and error".to_string())
         })
     }
 
@@ -1312,8 +1310,7 @@ impl NotificationListener {
                         Err(_) => {}   // parse error, skip
                     },
                     Err(IviError::IoError(ref e))
-                        if e.kind() == ErrorKind::WouldBlock
-                            || e.kind() == ErrorKind::TimedOut =>
+                        if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut =>
                     {
                         continue; // timeout — check stop flag and retry
                     }

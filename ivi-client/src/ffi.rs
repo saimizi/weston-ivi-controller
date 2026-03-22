@@ -916,7 +916,12 @@ impl Default for IviOrientationChange {
 
 impl Default for Rectangle {
     fn default() -> Self {
-        Self { x: 0, y: 0, width: 0, height: 0 }
+        Self {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        }
     }
 }
 
