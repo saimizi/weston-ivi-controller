@@ -11,12 +11,17 @@ pub mod ipcon;
 
 use crate::error::{IviError, Result};
 use crate::ffi::*;
-use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
+use crate::protocol::{EventType, JsonRpcRequest, JsonRpcResponse, Notification};
 #[allow(unused)]
 use jlogger_tracing::{jdebug, jerror, jinfo, jtrace, jwarn};
 use serde_json::json;
 use serde_json::Value;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::HashMap;
+use std::io::ErrorKind;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 #[cfg(not(feature = "enable-ipcon"))]
 use unix_domain::UnixDomainIviClient;
@@ -30,10 +35,11 @@ pub enum IviRequestResult {
     GetLayer(IviLayer),
 }
 
-trait IviClientTransport {
+trait IviClientTransport: Send {
     fn send_request(&mut self, request: &[u8]) -> Result<()>;
     fn receive_response(&mut self) -> Result<Vec<u8>>;
     fn disconnect(&mut self) -> Result<()>;
+    fn set_read_timeout(&mut self, timeout: Option<Duration>) -> Result<()>;
 }
 
 pub struct IviClient {
@@ -1132,5 +1138,206 @@ impl IviClient {
     /// ```
     pub fn commit(&mut self) -> Result<()> {
         self.send_request("commit", json!({})).map(|_| ())
+    }
+}
+
+// ============================================================================
+// NotificationListener
+// ============================================================================
+
+/// Callback type for notification events.
+pub type NotificationCallback = Arc<dyn Fn(&Notification) + Send + Sync + 'static>;
+
+/// Listens for event notifications from the IVI controller.
+///
+/// Opens its own dedicated socket connection so that notifications are not
+/// mixed with RPC responses on the shared `IviClient` connection.
+///
+/// # Example
+///
+/// ```no_run
+/// use ivi_client::{NotificationListener, EventType};
+///
+/// # fn main() -> ivi_client::Result<()> {
+/// let mut listener = NotificationListener::new(None)?;
+///
+/// listener.on(EventType::SurfaceCreated, |notif| {
+///     println!("Surface created: {}", notif.params["surface_id"]);
+/// });
+///
+/// listener.on_all(|notif| {
+///     println!("Event: {:?}", notif.event_type);
+/// });
+///
+/// listener.start(&[EventType::SurfaceCreated, EventType::VisibilityChanged])?;
+/// // ... callbacks fire in background thread ...
+/// listener.stop();
+/// # Ok(())
+/// # }
+/// ```
+pub struct NotificationListener {
+    transport: Arc<Mutex<Box<dyn IviClientTransport>>>,
+    request_id: AtomicU64,
+    callbacks: Arc<Mutex<HashMap<EventType, Vec<NotificationCallback>>>>,
+    catch_all_callbacks: Arc<Mutex<Vec<NotificationCallback>>>,
+    stop_flag: Arc<AtomicBool>,
+    thread_handle: Option<JoinHandle<()>>,
+}
+
+impl NotificationListener {
+    /// Create a new listener connected to the IVI controller.
+    pub fn new(remote: Option<&str>) -> Result<Self> {
+        #[cfg(not(feature = "enable-ipcon"))]
+        let transport: Box<dyn IviClientTransport> =
+            Box::new(UnixDomainIviClient::connect(remote)?);
+
+        #[cfg(feature = "enable-ipcon")]
+        let transport: Box<dyn IviClientTransport> =
+            Box::new(IpconIviClient::ipcon_connect(None, remote)?);
+
+        Ok(Self {
+            transport: Arc::new(Mutex::new(transport)),
+            request_id: AtomicU64::new(1),
+            callbacks: Arc::new(Mutex::new(HashMap::new())),
+            catch_all_callbacks: Arc::new(Mutex::new(Vec::new())),
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            thread_handle: None,
+        })
+    }
+
+    fn next_request_id(&self) -> u64 {
+        self.request_id.fetch_add(1, Ordering::SeqCst)
+    }
+
+    fn send_rpc(&self, method: &str, params: Value) -> Result<Value> {
+        let request_id = self.next_request_id();
+        let request = JsonRpcRequest::new(request_id, method, params);
+        let request_json = serde_json::to_vec(&request)
+            .map_err(|e| IviError::SerializationError(e.to_string()))?;
+
+        let mut transport = self.transport.lock().unwrap();
+        transport.send_request(&request_json)?;
+        let response_buf = transport.receive_response()?;
+
+        let response: JsonRpcResponse = serde_json::from_slice(&response_buf)
+            .map_err(|e| IviError::DeserializationError(e.to_string()))?;
+
+        if let Some(error) = response.error {
+            return Err(IviError::RequestFailed {
+                code: error.code,
+                message: error.message,
+            });
+        }
+
+        response.result.ok_or_else(|| {
+            IviError::DeserializationError(
+                "Response missing both result and error".to_string(),
+            )
+        })
+    }
+
+    /// Register a callback for a specific event type.
+    /// Multiple callbacks per event type are allowed.
+    pub fn on<F>(&mut self, event_type: EventType, callback: F)
+    where
+        F: Fn(&Notification) + Send + Sync + 'static,
+    {
+        self.callbacks
+            .lock()
+            .unwrap()
+            .entry(event_type)
+            .or_default()
+            .push(Arc::new(callback));
+    }
+
+    /// Register a catch-all callback invoked for every received event.
+    pub fn on_all<F>(&mut self, callback: F)
+    where
+        F: Fn(&Notification) + Send + Sync + 'static,
+    {
+        self.catch_all_callbacks
+            .lock()
+            .unwrap()
+            .push(Arc::new(callback));
+    }
+
+    /// Subscribe to the given event types on the server and start the
+    /// background reader thread. Callbacks registered with `on`/`on_all`
+    /// will fire from this thread.
+    pub fn start(&mut self, event_types: &[EventType]) -> Result<()> {
+        self.send_rpc("subscribe", json!({ "event_types": event_types }))?;
+
+        self.stop_flag.store(false, Ordering::Relaxed);
+
+        let transport = Arc::clone(&self.transport);
+        let callbacks = Arc::clone(&self.callbacks);
+        let catch_all_callbacks = Arc::clone(&self.catch_all_callbacks);
+        let stop_flag = Arc::clone(&self.stop_flag);
+
+        self.thread_handle = Some(std::thread::spawn(move || {
+            loop {
+                if stop_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                let frame = {
+                    let mut t = transport.lock().unwrap();
+                    let _ = t.set_read_timeout(Some(Duration::from_millis(100)));
+                    let r = t.receive_response();
+                    let _ = t.set_read_timeout(None);
+                    r
+                };
+
+                match frame {
+                    Ok(bytes) => match Notification::try_from_frame(&bytes) {
+                        Ok(Some(notif)) => {
+                            // Clone Arc refs before dispatching to avoid holding the lock
+                            // while callbacks run.
+                            let per_type: Vec<NotificationCallback> = callbacks
+                                .lock()
+                                .unwrap()
+                                .get(&notif.event_type)
+                                .cloned()
+                                .unwrap_or_default();
+                            for cb in &per_type {
+                                cb(&notif);
+                            }
+                            let all: Vec<NotificationCallback> =
+                                catch_all_callbacks.lock().unwrap().clone();
+                            for cb in &all {
+                                cb(&notif);
+                            }
+                        }
+                        Ok(None) => {} // stray RPC response, skip
+                        Err(_) => {}   // parse error, skip
+                    },
+                    Err(IviError::IoError(ref e))
+                        if e.kind() == ErrorKind::WouldBlock
+                            || e.kind() == ErrorKind::TimedOut =>
+                    {
+                        continue; // timeout — check stop flag and retry
+                    }
+                    Err(_) => break, // real error — exit thread
+                }
+            }
+        }));
+
+        Ok(())
+    }
+
+    /// Signal the background thread to stop and wait for it to finish.
+    pub fn stop(&mut self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.thread_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for NotificationListener {
+    fn drop(&mut self) {
+        self.stop();
+        let mut t = self.transport.lock().unwrap();
+        let _ = t.disconnect();
     }
 }

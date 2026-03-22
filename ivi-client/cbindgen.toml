@@ -42,6 +42,16 @@ include = [
     "IviSize",
     "IviSurface",
     "IviLayer",
+    "IviObjectType",
+    "IviEventType",
+    "IviVisibilityChange",
+    "IviOpacityChange",
+    "IviGeometryChange",
+    "IviZOrderChange",
+    "IviOrientationChange",
+    "IviNotification",
+    "NotificationListener",
+    "IviNotificationCCallback",
 ]
 
 # Prefix for items (none needed)

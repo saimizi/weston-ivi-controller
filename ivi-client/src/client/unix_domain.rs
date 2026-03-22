@@ -1,6 +1,7 @@
 use super::IviClientTransport;
 use crate::error::{IviError, Result};
 use std::os::unix::net::UnixStream;
+use std::time::Duration;
 use weston_ivi_controller::rpc::framing::{write_frame, FrameReadResult, FrameReader};
 
 /// Default socket path for the IVI controller
@@ -115,5 +116,15 @@ impl IviClientTransport for UnixDomainIviClient {
             drop(socket);
         }
         Ok(())
+    }
+
+    fn set_read_timeout(&mut self, timeout: Option<Duration>) -> Result<()> {
+        let socket = self.socket.as_mut().ok_or_else(|| {
+            IviError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "Socket is not connected",
+            ))
+        })?;
+        socket.set_read_timeout(timeout).map_err(IviError::IoError)
     }
 }

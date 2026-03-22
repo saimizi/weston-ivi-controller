@@ -61,6 +61,13 @@ impl IviClientTransport for IpconIviClient {
         Ok(())
     }
 
+    fn set_read_timeout(&mut self, _timeout: Option<std::time::Duration>) -> crate::Result<()> {
+        Err(IviError::IoError(stdIoError::new(
+            std::io::ErrorKind::Unsupported,
+            "set_read_timeout not supported for ipcon transport",
+        )))
+    }
+
     fn disconnect(&mut self) -> crate::Result<()> {
         let ih = self.ih.lock().unwrap();
         ih.leave_group(
