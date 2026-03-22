@@ -36,6 +36,12 @@ pub enum NotificationType {
     LayerVisibilityChanged,
     /// Layer opacity changed
     LayerOpacityChanged,
+
+    // Surface content events
+    /// Surface received its first buffer commit (content ready)
+    SurfaceContentReady,
+    /// Surface buffer dimensions changed
+    SurfaceContentSizeChanged,
 }
 
 /// Notification data for geometry changes
@@ -113,18 +119,40 @@ pub enum NotificationData {
     SourceGeometryChange(GeometryChangeNotification),
     DestinationGeometryChange(GeometryChangeNotification),
     FocusChange(FocusChangeNotification),
-    SurfaceCreated { surface_id: u32 },
-    SurfaceDestroyed { surface_id: u32 },
+    SurfaceCreated {
+        surface_id: u32,
+    },
+    SurfaceDestroyed {
+        surface_id: u32,
+    },
     VisibilityChange(VisibilityChangeNotification),
     OpacityChange(OpacityChangeNotification),
     OrientationChange(OrientationChangeNotification),
     ZOrderChange(ZOrderChangeNotification),
 
     // Layer notifications
-    LayerCreated { layer_id: u32 },
-    LayerDestroyed { layer_id: u32 },
+    LayerCreated {
+        layer_id: u32,
+    },
+    LayerDestroyed {
+        layer_id: u32,
+    },
     LayerVisibilityChange(LayerVisibilityChangeNotification),
     LayerOpacityChange(LayerOpacityChangeNotification),
+
+    // Surface content notifications
+    SurfaceContentReady {
+        surface_id: u32,
+        width: i32,
+        height: i32,
+    },
+    SurfaceContentSizeChanged {
+        surface_id: u32,
+        old_width: i32,
+        old_height: i32,
+        new_width: i32,
+        new_height: i32,
+    },
 }
 
 /// A notification event
@@ -388,6 +416,55 @@ impl NotificationManager {
             new_visibility
         );
 
+        self.emit(notification);
+    }
+
+    /// Emit a surface content ready notification
+    pub fn emit_surface_content_ready(&self, surface_id: u32, width: i32, height: i32) {
+        let notification = Notification {
+            notification_type: NotificationType::SurfaceContentReady,
+            data: NotificationData::SurfaceContentReady {
+                surface_id,
+                width,
+                height,
+            },
+        };
+        jinfo!(
+            "Surface content ready: surface {} ({}x{})",
+            surface_id,
+            width,
+            height
+        );
+        self.emit(notification);
+    }
+
+    /// Emit a surface content size changed notification
+    pub fn emit_surface_content_size_changed(
+        &self,
+        surface_id: u32,
+        old_width: i32,
+        old_height: i32,
+        new_width: i32,
+        new_height: i32,
+    ) {
+        let notification = Notification {
+            notification_type: NotificationType::SurfaceContentSizeChanged,
+            data: NotificationData::SurfaceContentSizeChanged {
+                surface_id,
+                old_width,
+                old_height,
+                new_width,
+                new_height,
+            },
+        };
+        jinfo!(
+            "Surface content size changed: surface {} ({}x{} -> {}x{})",
+            surface_id,
+            old_width,
+            old_height,
+            new_width,
+            new_height
+        );
         self.emit(notification);
     }
 

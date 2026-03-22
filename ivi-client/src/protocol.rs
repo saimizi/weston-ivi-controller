@@ -219,6 +219,8 @@ impl JsonRpcError {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EventType {
     SurfaceCreated,
+    SurfaceContentReady,
+    SurfaceContentSizeChanged,
     SurfaceDestroyed,
     SourceGeometryChanged,
     DestinationGeometryChanged,
