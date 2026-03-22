@@ -3,6 +3,7 @@
 //! This module defines the request and response structures for the JSON-RPC protocol
 //! used to communicate with the Weston IVI controller over UNIX domain sockets.
 
+use crate::error::{IviError, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -214,10 +215,117 @@ impl JsonRpcError {
     }
 }
 
+/// Event types for notifications from the IVI controller.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EventType {
+    SurfaceCreated,
+    SurfaceDestroyed,
+    SourceGeometryChanged,
+    DestinationGeometryChanged,
+    VisibilityChanged,
+    OpacityChanged,
+    OrientationChanged,
+    ZOrderChanged,
+    FocusChanged,
+    LayerCreated,
+    LayerDestroyed,
+    LayerVisibilityChanged,
+    LayerOpacityChanged,
+}
+
+/// A notification received from the IVI controller.
+pub struct Notification {
+    pub event_type: EventType,
+    pub params: Value,
+}
+
+impl Notification {
+    /// Parse a raw frame into a Notification.
+    ///
+    /// Returns `Ok(None)` if the frame is an RPC response (has an `"id"` field),
+    /// so callers can silently skip it.
+    pub fn try_from_frame(frame: &[u8]) -> Result<Option<Self>> {
+        let value: Value = serde_json::from_slice(frame)?;
+
+        // Frames with "id" are RPC responses, not notifications.
+        if value.get("id").is_some() {
+            return Ok(None);
+        }
+
+        let params = value
+            .get("params")
+            .ok_or_else(|| {
+                IviError::DeserializationError("Missing 'params' field in notification".to_string())
+            })?
+            .clone();
+
+        let event_type_str = params
+            .get("event_type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                IviError::DeserializationError(
+                    "Missing 'event_type' in notification params".to_string(),
+                )
+            })?;
+
+        let event_type: EventType =
+            serde_json::from_value(Value::String(event_type_str.to_string())).map_err(|_| {
+                IviError::DeserializationError(format!("Unknown event_type '{}'", event_type_str))
+            })?;
+
+        Ok(Some(Notification { event_type, params }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_event_type_round_trip() {
+        let types = [
+            EventType::SurfaceCreated,
+            EventType::SurfaceDestroyed,
+            EventType::SourceGeometryChanged,
+            EventType::DestinationGeometryChanged,
+            EventType::VisibilityChanged,
+            EventType::OpacityChanged,
+            EventType::OrientationChanged,
+            EventType::ZOrderChanged,
+            EventType::FocusChanged,
+            EventType::LayerCreated,
+            EventType::LayerDestroyed,
+            EventType::LayerVisibilityChanged,
+            EventType::LayerOpacityChanged,
+        ];
+        for et in &types {
+            let s = serde_json::to_string(et).unwrap();
+            let et2: EventType = serde_json::from_str(&s).unwrap();
+            assert_eq!(et, &et2);
+        }
+    }
+
+    #[test]
+    fn test_try_from_frame_notification() {
+        let frame = br#"{"method":"notification","params":{"event_type":"SurfaceCreated","surface_id":1000}}"#;
+        let notif = Notification::try_from_frame(frame).unwrap().unwrap();
+        assert_eq!(notif.event_type, EventType::SurfaceCreated);
+        assert_eq!(notif.params["surface_id"].as_u64().unwrap(), 1000);
+    }
+
+    #[test]
+    fn test_try_from_frame_skips_rpc_response() {
+        let frame = br#"{"id":1,"result":{"surfaces":[]}}"#;
+        let result = Notification::try_from_frame(frame).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_try_from_frame_malformed() {
+        let frame = b"{invalid json}";
+        assert!(Notification::try_from_frame(frame).is_err());
+    }
 
     #[test]
     fn test_request_creation() {

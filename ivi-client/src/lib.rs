@@ -106,7 +106,7 @@ pub mod ffi;
 pub mod protocol;
 
 // Re-export main types for convenience
-pub use client::IviClient;
+pub use client::{IviClient, NotificationCallback, NotificationListener};
 pub use error::{IviError, Result};
 pub use ffi::*;
-pub use protocol::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
+pub use protocol::{EventType, JsonRpcError, JsonRpcRequest, JsonRpcResponse, Notification};

@@ -6,11 +6,13 @@
 use serde::{Deserialize, Serialize};
 use std::ffi::{CStr, CString};
 use std::fmt::Display;
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_void};
 use std::ptr;
+use std::sync::Arc;
 
-use crate::client::IviClient;
+use crate::client::{IviClient, NotificationCallback, NotificationListener};
 use crate::error::IviError;
+use crate::protocol::{EventType, Notification};
 
 pub type SurfaceId = u32;
 pub type LayerId = u32;
@@ -29,7 +31,7 @@ impl Display for IviSize {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Rectangle {
     pub x: i32,
     pub y: i32,
@@ -789,5 +791,440 @@ pub unsafe extern "C" fn ivi_free_layers(layers: *mut IviLayer, count: usize) {
         // Reconstruct the Box with the correct length
         let slice = std::slice::from_raw_parts_mut(layers, count);
         let _ = Box::from_raw(slice);
+    }
+}
+
+// ============================================================================
+// Notification types
+// ============================================================================
+
+/// Indicates whether a notification refers to a surface or a layer.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum IviObjectType {
+    #[default]
+    Surface = 0,
+    Layer = 1,
+}
+
+/// Event type enum for C consumers.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum IviEventType {
+    #[default]
+    SurfaceCreated = 0,
+    SurfaceDestroyed = 1,
+    SourceGeometryChanged = 2,
+    DestinationGeometryChanged = 3,
+    VisibilityChanged = 4,
+    OpacityChanged = 5,
+    OrientationChanged = 6,
+    ZOrderChanged = 7,
+    FocusChanged = 8,
+    LayerCreated = 9,
+    LayerDestroyed = 10,
+    LayerVisibilityChanged = 11,
+    LayerOpacityChanged = 12,
+}
+
+impl From<&EventType> for IviEventType {
+    fn from(et: &EventType) -> Self {
+        match et {
+            EventType::SurfaceCreated => IviEventType::SurfaceCreated,
+            EventType::SurfaceDestroyed => IviEventType::SurfaceDestroyed,
+            EventType::SourceGeometryChanged => IviEventType::SourceGeometryChanged,
+            EventType::DestinationGeometryChanged => IviEventType::DestinationGeometryChanged,
+            EventType::VisibilityChanged => IviEventType::VisibilityChanged,
+            EventType::OpacityChanged => IviEventType::OpacityChanged,
+            EventType::OrientationChanged => IviEventType::OrientationChanged,
+            EventType::ZOrderChanged => IviEventType::ZOrderChanged,
+            EventType::FocusChanged => IviEventType::FocusChanged,
+            EventType::LayerCreated => IviEventType::LayerCreated,
+            EventType::LayerDestroyed => IviEventType::LayerDestroyed,
+            EventType::LayerVisibilityChanged => IviEventType::LayerVisibilityChanged,
+            EventType::LayerOpacityChanged => IviEventType::LayerOpacityChanged,
+        }
+    }
+}
+
+impl From<IviEventType> for EventType {
+    fn from(et: IviEventType) -> Self {
+        match et {
+            IviEventType::SurfaceCreated => EventType::SurfaceCreated,
+            IviEventType::SurfaceDestroyed => EventType::SurfaceDestroyed,
+            IviEventType::SourceGeometryChanged => EventType::SourceGeometryChanged,
+            IviEventType::DestinationGeometryChanged => EventType::DestinationGeometryChanged,
+            IviEventType::VisibilityChanged => EventType::VisibilityChanged,
+            IviEventType::OpacityChanged => EventType::OpacityChanged,
+            IviEventType::OrientationChanged => EventType::OrientationChanged,
+            IviEventType::ZOrderChanged => EventType::ZOrderChanged,
+            IviEventType::FocusChanged => EventType::FocusChanged,
+            IviEventType::LayerCreated => EventType::LayerCreated,
+            IviEventType::LayerDestroyed => EventType::LayerDestroyed,
+            IviEventType::LayerVisibilityChanged => EventType::LayerVisibilityChanged,
+            IviEventType::LayerOpacityChanged => EventType::LayerOpacityChanged,
+        }
+    }
+}
+
+/// Visibility change data (old and new state).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IviVisibilityChange {
+    pub old_visibility: bool,
+    pub new_visibility: bool,
+}
+
+/// Opacity change data (old and new value).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IviOpacityChange {
+    pub old_opacity: f32,
+    pub new_opacity: f32,
+}
+
+/// Geometry (rectangle) change data (old and new rectangle).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IviGeometryChange {
+    pub old_rect: Rectangle,
+    pub new_rect: Rectangle,
+}
+
+/// Z-order change data (old and new value).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IviZOrderChange {
+    pub old_z_order: i32,
+    pub new_z_order: i32,
+}
+
+/// Orientation change data (old and new value).
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct IviOrientationChange {
+    pub old_orientation: IviOrientation,
+    pub new_orientation: IviOrientation,
+}
+
+impl Default for IviOrientationChange {
+    fn default() -> Self {
+        Self {
+            old_orientation: IviOrientation::Normal,
+            new_orientation: IviOrientation::Normal,
+        }
+    }
+}
+
+/// A notification event delivered to C callbacks.
+///
+/// Only the fields relevant to `event_type` are populated; all others are
+/// zero-initialised. Check `object_type` to determine whether `object_id`
+/// refers to a surface or a layer.
+///
+/// For `FocusChanged` events:
+///   - `object_type`   = `SURFACE`
+///   - `object_id`     = new focused surface ID (0 if none)
+///   - `object_old_id` = previous focused surface ID (0 if none)
+#[repr(C)]
+#[derive(Debug, Clone, Default)]
+pub struct IviNotification {
+    pub event_type: IviEventType,
+    pub object_type: IviObjectType,
+    /// Current object ID (surface or layer). For focus events: new focused surface.
+    pub object_id: u32,
+    /// Previous object ID. Only meaningful for `FocusChanged` events.
+    pub object_old_id: u32,
+    pub visibility: IviVisibilityChange,
+    pub opacity: IviOpacityChange,
+    pub src_geometry: IviGeometryChange,
+    pub dest_geometry: IviGeometryChange,
+    pub z_order: IviZOrderChange,
+    pub orientation: IviOrientationChange,
+}
+
+fn parse_rect(params: &serde_json::Value, key: &str) -> Rectangle {
+    let r = &params[key];
+    Rectangle {
+        x: r["x"].as_i64().unwrap_or(0) as i32,
+        y: r["y"].as_i64().unwrap_or(0) as i32,
+        width: r["width"].as_i64().unwrap_or(0) as i32,
+        height: r["height"].as_i64().unwrap_or(0) as i32,
+    }
+}
+
+fn parse_orientation(params: &serde_json::Value, key: &str) -> IviOrientation {
+    match params[key].as_str().unwrap_or("Normal") {
+        "Rotate90" => IviOrientation::Rotate90,
+        "Rotate180" => IviOrientation::Rotate180,
+        "Rotate270" => IviOrientation::Rotate270,
+        "Flipped" => IviOrientation::Flipped,
+        "Flipped90" => IviOrientation::Flipped90,
+        "Flipped180" => IviOrientation::Flipped180,
+        "Flipped270" => IviOrientation::Flipped270,
+        _ => IviOrientation::Normal,
+    }
+}
+
+fn notification_to_ffi(notif: &Notification) -> IviNotification {
+    let p = &notif.params;
+    let mut result = IviNotification {
+        event_type: IviEventType::from(&notif.event_type),
+        ..Default::default()
+    };
+
+    match &notif.event_type {
+        EventType::SurfaceCreated | EventType::SurfaceDestroyed => {
+            result.object_type = IviObjectType::Surface;
+            result.object_id = p["surface_id"].as_u64().unwrap_or(0) as u32;
+        }
+        EventType::SourceGeometryChanged => {
+            result.object_type = IviObjectType::Surface;
+            result.object_id = p["surface_id"].as_u64().unwrap_or(0) as u32;
+            result.src_geometry = IviGeometryChange {
+                old_rect: parse_rect(p, "old_rect"),
+                new_rect: parse_rect(p, "new_rect"),
+            };
+        }
+        EventType::DestinationGeometryChanged => {
+            result.object_type = IviObjectType::Surface;
+            result.object_id = p["surface_id"].as_u64().unwrap_or(0) as u32;
+            result.dest_geometry = IviGeometryChange {
+                old_rect: parse_rect(p, "old_rect"),
+                new_rect: parse_rect(p, "new_rect"),
+            };
+        }
+        EventType::VisibilityChanged => {
+            result.object_type = IviObjectType::Surface;
+            result.object_id = p["surface_id"].as_u64().unwrap_or(0) as u32;
+            result.visibility = IviVisibilityChange {
+                old_visibility: p["old_visibility"].as_bool().unwrap_or(false),
+                new_visibility: p["new_visibility"].as_bool().unwrap_or(false),
+            };
+        }
+        EventType::OpacityChanged => {
+            result.object_type = IviObjectType::Surface;
+            result.object_id = p["surface_id"].as_u64().unwrap_or(0) as u32;
+            result.opacity = IviOpacityChange {
+                old_opacity: p["old_opacity"].as_f64().unwrap_or(0.0) as f32,
+                new_opacity: p["new_opacity"].as_f64().unwrap_or(0.0) as f32,
+            };
+        }
+        EventType::OrientationChanged => {
+            result.object_type = IviObjectType::Surface;
+            result.object_id = p["surface_id"].as_u64().unwrap_or(0) as u32;
+            result.orientation = IviOrientationChange {
+                old_orientation: parse_orientation(p, "old_orientation"),
+                new_orientation: parse_orientation(p, "new_orientation"),
+            };
+        }
+        EventType::ZOrderChanged => {
+            result.object_type = IviObjectType::Surface;
+            result.object_id = p["surface_id"].as_u64().unwrap_or(0) as u32;
+            result.z_order = IviZOrderChange {
+                old_z_order: p["old_z_order"].as_i64().unwrap_or(0) as i32,
+                new_z_order: p["new_z_order"].as_i64().unwrap_or(0) as i32,
+            };
+        }
+        EventType::FocusChanged => {
+            result.object_type = IviObjectType::Surface;
+            result.object_id = p["new_focused_surface"].as_u64().unwrap_or(0) as u32;
+            result.object_old_id = p["old_focused_surface"].as_u64().unwrap_or(0) as u32;
+        }
+        EventType::LayerCreated | EventType::LayerDestroyed => {
+            result.object_type = IviObjectType::Layer;
+            result.object_id = p["layer_id"].as_u64().unwrap_or(0) as u32;
+        }
+        EventType::LayerVisibilityChanged => {
+            result.object_type = IviObjectType::Layer;
+            result.object_id = p["layer_id"].as_u64().unwrap_or(0) as u32;
+            result.visibility = IviVisibilityChange {
+                old_visibility: p["old_visibility"].as_bool().unwrap_or(false),
+                new_visibility: p["new_visibility"].as_bool().unwrap_or(false),
+            };
+        }
+        EventType::LayerOpacityChanged => {
+            result.object_type = IviObjectType::Layer;
+            result.object_id = p["layer_id"].as_u64().unwrap_or(0) as u32;
+            result.opacity = IviOpacityChange {
+                old_opacity: p["old_opacity"].as_f64().unwrap_or(0.0) as f32,
+                new_opacity: p["new_opacity"].as_f64().unwrap_or(0.0) as f32,
+            };
+        }
+    }
+
+    result
+}
+
+/// C callback type for notification events.
+pub type IviNotificationCCallback =
+    unsafe extern "C" fn(notif: *const IviNotification, user_data: *mut c_void);
+
+// ============================================================================
+// C API Functions - Notification Listener
+// ============================================================================
+
+/// Create a notification listener with its own connection to the IVI controller.
+///
+/// # Safety
+///
+/// - `socket_path` must be a valid null-terminated C string or NULL
+/// - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
+///
+/// # Returns
+///
+/// Returns a pointer to a `NotificationListener` on success, or NULL on failure.
+#[no_mangle]
+pub unsafe extern "C" fn ivi_notification_listener_new(
+    socket_path: *const c_char,
+    error_buf: *mut c_char,
+    error_buf_len: usize,
+) -> *mut NotificationListener {
+    let remote = if socket_path.is_null() {
+        None
+    } else {
+        match CStr::from_ptr(socket_path).to_str() {
+            Ok(s) => Some(s),
+            Err(_) => {
+                write_error_to_buffer(
+                    &IviError::ConnectionFailed("Invalid socket path encoding".to_string()),
+                    error_buf,
+                    error_buf_len,
+                );
+                return ptr::null_mut();
+            }
+        }
+    };
+
+    match NotificationListener::new(remote) {
+        Ok(listener) => Box::into_raw(Box::new(listener)),
+        Err(err) => {
+            write_error_to_buffer(&err, error_buf, error_buf_len);
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Stop and free a notification listener.
+///
+/// # Safety
+///
+/// - `listener` must be a valid pointer returned from `ivi_notification_listener_new`, or NULL
+/// - After calling this function, `listener` must not be used again
+#[no_mangle]
+pub unsafe extern "C" fn ivi_notification_listener_free(listener: *mut NotificationListener) {
+    if !listener.is_null() {
+        let _ = Box::from_raw(listener);
+    }
+}
+
+/// Register a C callback for a specific event type.
+///
+/// Multiple callbacks per event type are allowed.
+///
+/// # Safety
+///
+/// - `listener` must be a valid pointer returned from `ivi_notification_listener_new`
+/// - `callback` must remain valid for the lifetime of the listener
+/// - `user_data` is passed to the callback as-is; the caller is responsible for its lifetime
+#[no_mangle]
+pub unsafe extern "C" fn ivi_notification_listener_on(
+    listener: *mut NotificationListener,
+    event_type: IviEventType,
+    callback: IviNotificationCCallback,
+    user_data: *mut c_void,
+) -> IviErrorCode {
+    if listener.is_null() {
+        return IviErrorCode::InvalidParam;
+    }
+
+    let listener = &mut *listener;
+    let user_data_ptr = user_data as usize; // make Send-safe
+
+    let cb: NotificationCallback = Arc::new(move |notif: &Notification| {
+        let ffi_notif = notification_to_ffi(notif);
+        unsafe { callback(&ffi_notif, user_data_ptr as *mut c_void) };
+    });
+
+    listener.on(EventType::from(event_type), move |notif| cb(notif));
+    IviErrorCode::Ok
+}
+
+/// Register a C catch-all callback invoked for every event type.
+///
+/// # Safety
+///
+/// - `listener` must be a valid pointer returned from `ivi_notification_listener_new`
+/// - `callback` must remain valid for the lifetime of the listener
+/// - `user_data` is passed to the callback as-is; the caller is responsible for its lifetime
+#[no_mangle]
+pub unsafe extern "C" fn ivi_notification_listener_on_all(
+    listener: *mut NotificationListener,
+    callback: IviNotificationCCallback,
+    user_data: *mut c_void,
+) -> IviErrorCode {
+    if listener.is_null() {
+        return IviErrorCode::InvalidParam;
+    }
+
+    let listener = &mut *listener;
+    let user_data_ptr = user_data as usize;
+
+    listener.on_all(move |notif: &Notification| {
+        let ffi_notif = notification_to_ffi(notif);
+        unsafe { callback(&ffi_notif, user_data_ptr as *mut c_void) };
+    });
+    IviErrorCode::Ok
+}
+
+/// Subscribe to the specified event types and start the background reader thread.
+///
+/// # Safety
+///
+/// - `listener` must be a valid pointer returned from `ivi_notification_listener_new`
+/// - `event_types` must be a valid pointer to an array of `count` `IviEventType` values, or NULL
+///   if `count` is 0
+/// - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
+#[no_mangle]
+pub unsafe extern "C" fn ivi_notification_listener_start(
+    listener: *mut NotificationListener,
+    event_types: *const IviEventType,
+    count: usize,
+    error_buf: *mut c_char,
+    error_buf_len: usize,
+) -> IviErrorCode {
+    if listener.is_null() {
+        return IviErrorCode::InvalidParam;
+    }
+
+    let listener = &mut *listener;
+
+    let types: Vec<EventType> = if event_types.is_null() || count == 0 {
+        vec![]
+    } else {
+        std::slice::from_raw_parts(event_types, count)
+            .iter()
+            .map(|&et| EventType::from(et))
+            .collect()
+    };
+
+    match listener.start(&types) {
+        Ok(()) => IviErrorCode::Ok,
+        Err(err) => {
+            write_error_to_buffer(&err, error_buf, error_buf_len);
+            err.into()
+        }
+    }
+}
+
+/// Stop the background reader thread. Registered callbacks will no longer fire.
+///
+/// # Safety
+///
+/// - `listener` must be a valid pointer returned from `ivi_notification_listener_new`
+#[no_mangle]
+pub unsafe extern "C" fn ivi_notification_listener_stop(listener: *mut NotificationListener) {
+    if !listener.is_null() {
+        (*listener).stop();
     }
 }

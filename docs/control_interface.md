@@ -9,21 +9,36 @@ This document describes the JSON-RPC 2.0 protocol used to communicate with the W
 - [Message Format](#message-format)
 - [Error Codes](#error-codes)
 - [RPC Methods](#rpc-methods)
-  - [list_layers](#list_layers)
-  - [get_layer](#get_layer)
-  - [set_layer_source_rectangle](#set_layer_source_rectangle)
-  - [set_layer_destination_rectangle](#set_layer_destination_rectangle)
-  - [set_layer_visibility](#set_layer_visibility)
-  - [set_layer_opacity](#set_layer_opacity)
-  - [list_surfaces](#list_surfaces)
-  - [get_surface](#get_surface)
-  - [set_surface_source_rectangle](#set_surface_source_rectangle)
-  - [set_surface_destination_rectangle](#set_surface_destination_rectangle)
-  - [set_surface_visibility](#set_surface_visibility)
-  - [set_surface_opacity](#set_surface_opacity)
-  - [set_surface_z_order](#set_surface_z_order)
-  - [set_surface_focus](#set_surface_focus)
-  - [commit](#commit)
+  - Surface methods
+    - [list_surfaces](#list_surfaces)
+    - [get_surface](#get_surface)
+    - [set_surface_source_rectangle](#set_surface_source_rectangle)
+    - [set_surface_destination_rectangle](#set_surface_destination_rectangle)
+    - [set_surface_visibility](#set_surface_visibility)
+    - [set_surface_opacity](#set_surface_opacity)
+    - [set_surface_z_order](#set_surface_z_order)
+    - [set_surface_focus](#set_surface_focus)
+    - [commit](#commit)
+  - Layer methods
+    - [list_layers](#list_layers)
+    - [get_layer](#get_layer)
+    - [create_layer](#create_layer)
+    - [destroy_layer](#destroy_layer)
+    - [set_layer_source_rectangle](#set_layer_source_rectangle)
+    - [set_layer_destination_rectangle](#set_layer_destination_rectangle)
+    - [set_layer_visibility](#set_layer_visibility)
+    - [set_layer_opacity](#set_layer_opacity)
+    - [set_layer_surfaces](#set_layer_surfaces)
+    - [add_surface_to_layer](#add_surface_to_layer)
+    - [remove_surface_from_layer](#remove_surface_from_layer)
+    - [get_layer_surfaces](#get_layer_surfaces)
+  - Screen methods
+    - [list_screens](#list_screens)
+    - [get_screen](#get_screen)
+    - [get_screen_layers](#get_screen_layers)
+    - [get_layer_screens](#get_layer_screens)
+    - [add_layers_to_screen](#add_layers_to_screen)
+    - [remove_layer_from_screen](#remove_layer_from_screen)
 - [Event Notifications](#event-notifications)
   - [subscribe](#subscribe)
   - [unsubscribe](#unsubscribe)
@@ -53,7 +68,7 @@ External App → [UNIX Socket] → weston_ivi_controller.so → IVI Layout API �
 ### Protocol Features
 
 - **JSON-RPC 2.0 compliant**: Standard request/response format
-- **Newline-delimited messages**: Each message is terminated with `\n`
+- **Length-prefixed framing**: Each message is preceded by a 4-byte big-endian unsigned integer giving the byte length of the JSON body
 - **Synchronous responses**: Each request receives exactly one response
 - **Multiple concurrent clients**: The controller supports multiple simultaneous connections
 - **Comprehensive error reporting**: Detailed error codes and messages
@@ -86,25 +101,37 @@ Default socket path: `/tmp/weston-ivi-controller.sock`
 
 1. Create a UNIX domain socket
 2. Connect to the socket path
-3. Send JSON-RPC requests (newline-terminated)
-4. Receive JSON-RPC responses (newline-terminated)
+3. Send JSON-RPC requests using length-prefixed framing
+4. Receive JSON-RPC responses using length-prefixed framing
 5. Close the connection when done
+
+### Framing
+
+Each message (request, response, or notification) is framed as:
+
+```
+[ 4 bytes: big-endian uint32 length ][ N bytes: JSON body ]
+```
 
 ### Example Connection (Python)
 
 ```python
 import socket
+import struct
 import json
 
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 sock.connect('/tmp/weston-ivi-controller.sock')
 
-# Send request
+# Send request with length-prefixed framing
 request = {"id": 1, "method": "list_surfaces", "params": {}}
-sock.sendall(json.dumps(request).encode() + b'\n')
+body = json.dumps(request).encode()
+sock.sendall(struct.pack('>I', len(body)) + body)
 
-# Receive response
-response = json.loads(sock.recv(4096).decode())
+# Receive length-prefixed response
+header = sock.recv(4)
+length = struct.unpack('>I', header)[0]
+response = json.loads(sock.recv(length).decode())
 
 sock.close()
 ```
@@ -172,7 +199,7 @@ The controller uses standard JSON-RPC 2.0 error codes plus custom application-sp
 | -32601 | Method not found | The requested method does not exist |
 | -32602 | Invalid params | Invalid method parameters |
 | -32603 | Internal error | Internal controller error |
-| -32000 | Surface not found | The specified surface ID does not exist |
+| -32000 | Not found | The specified surface or layer ID does not exist |
 
 ### Error Response Examples
 
@@ -222,10 +249,8 @@ Get information about all active IVI surfaces.
       {
         "id": 1000,
         "orig_size": { "width": 1920, "height": 1080 },
-        "src_position": { "x": 0, "y": 0 },
-        "src_size": { "width": 1920, "height": 1080 },
-        "dest_position": { "x": 0, "y": 0 },
-        "dest_size": { "width": 1920, "height": 1080 },
+        "src_rect": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+        "dest_rect": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
         "visibility": true,
         "opacity": 1.0,
         "orientation": "Normal",
@@ -234,10 +259,8 @@ Get information about all active IVI surfaces.
       {
         "id": 1001,
         "orig_size": { "width": 1600, "height": 1200 },
-        "src_position": { "x": 0, "y": 0 },
-        "src_size": { "width": 1600, "height": 1200 },
-        "dest_position": { "x": 100, "y": 100 },
-        "dest_size": { "width": 800, "height": 600 },
+        "src_rect": { "x": 0, "y": 0, "width": 1600, "height": 1200 },
+        "dest_rect": { "x": 100, "y": 100, "width": 800, "height": 600 },
         "visibility": false,
         "opacity": 0.8,
         "orientation": "Rotate90",
@@ -254,13 +277,11 @@ Get information about all active IVI surfaces.
 - `surfaces` (array): Array of surface objects, each containing:
   - `id` (number): Surface ID
   - `orig_size` (object): Original application buffer size with `width` and `height`
-  - `src_position` (object): Source rectangle position with `x` and `y` coordinates
-  - `src_size` (object): Source rectangle size with `width` and `height`
-  - `dest_position` (object): Destination rectangle position with `x` and `y` coordinates
-  - `dest_size` (object): Destination rectangle size with `width` and `height`
+  - `src_rect` (object): Source rectangle with `x`, `y`, `width`, `height`
+  - `dest_rect` (object): Destination rectangle with `x`, `y`, `width`, `height`
   - `visibility` (boolean): Whether the surface is visible
   - `opacity` (number): Opacity value (0.0 - 1.0)
-  - `orientation` (string): Orientation ("Normal", "Rotate90", "Rotate180", "Rotate270")
+  - `orientation` (string): Orientation ("Normal", "Rotate90", "Rotate180", "Rotate270", etc.)
   - `z_order` (number): Z-order (stacking position)
 
 ---
@@ -286,8 +307,9 @@ Get properties of a specific IVI surface.
   "id": 2,
   "result": {
     "id": 1000,
-    "position": { "x": 0, "y": 0 },
-    "size": { "width": 1920, "height": 1080 },
+    "orig_size": { "width": 1920, "height": 1080 },
+    "src_rect": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+    "dest_rect": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
     "visibility": true,
     "opacity": 1.0,
     "orientation": "Normal",
@@ -346,7 +368,7 @@ Set the source rectangle of an IVI surface (which part of the application buffer
 
 **Returns:**
 - `success` (boolean): Always `true` on success
-- `committed` (boolean): Indicates whether changes were committed
+- `committed` (boolean): Reflects whether changes were committed (`true` if `auto_commit` was set)
 
 **Errors:**
 - `-32000`: Surface not found
@@ -402,7 +424,7 @@ Set the destination rectangle of an IVI surface (where and at what size to displ
 
 **Returns:**
 - `success` (boolean): Always `true` on success
-- `committed` (boolean): Indicates whether changes were committed
+- `committed` (boolean): Reflects whether changes were committed
 
 **Errors:**
 - `-32000`: Surface not found
@@ -410,7 +432,6 @@ Set the destination rectangle of an IVI surface (where and at what size to displ
 
 **Validation:**
 - Width and height must be positive non-zero values
-- Position coordinates must be within valid display bounds
 
 **Behavior:**
 - By default (`auto_commit=false`), changes are queued and require a `commit` call
@@ -439,7 +460,8 @@ Show or hide an IVI surface.
 {
   "id": 5,
   "result": {
-    "success": true
+    "success": true,
+    "committed": false
   }
 }
 ```
@@ -447,9 +469,11 @@ Show or hide an IVI surface.
 **Parameters:**
 - `id` (number, required): Surface ID
 - `visible` (boolean, required): `true` to show, `false` to hide
+- `auto_commit` (boolean, optional): If `true`, commits changes immediately. Default: `false`
 
 **Returns:**
 - `success` (boolean): Always `true` on success
+- `committed` (boolean): Reflects whether changes were committed
 
 **Errors:**
 - `-32000`: Surface not found
@@ -477,7 +501,8 @@ Adjust the opacity of an IVI surface.
 {
   "id": 6,
   "result": {
-    "success": true
+    "success": true,
+    "committed": false
   }
 }
 ```
@@ -485,9 +510,11 @@ Adjust the opacity of an IVI surface.
 **Parameters:**
 - `id` (number, required): Surface ID
 - `opacity` (number, required): Opacity value (0.0 = fully transparent, 1.0 = fully opaque)
+- `auto_commit` (boolean, optional): If `true`, commits changes immediately. Default: `false`
 
 **Returns:**
 - `success` (boolean): Always `true` on success
+- `committed` (boolean): Reflects whether changes were committed
 
 **Errors:**
 - `-32000`: Surface not found
@@ -519,7 +546,8 @@ Change the stacking order (z-order) of an IVI surface.
 {
   "id": 8,
   "result": {
-    "success": true
+    "success": true,
+    "committed": false
   }
 }
 ```
@@ -527,16 +555,18 @@ Change the stacking order (z-order) of an IVI surface.
 **Parameters:**
 - `id` (number, required): Surface ID
 - `z_order` (number, required): Z-order value (higher values appear on top)
+- `auto_commit` (boolean, optional): If `true`, commits changes immediately. Default: `false`
 
 **Returns:**
 - `success` (boolean): Always `true` on success
+- `committed` (boolean): Reflects whether changes were committed
 
 **Errors:**
 - `-32000`: Surface not found
 - `-32602`: Invalid parameters (z-order out of valid range)
 
 **Validation:**
-- Z-order must be within the valid range for the layer (typically 0-1000)
+- Z-order must be in the range [0, 1000]
 - Higher z-order values appear on top of lower values
 
 ---
@@ -561,16 +591,19 @@ Route keyboard and pointer input focus to an IVI surface.
 {
   "id": 9,
   "result": {
-    "success": true
+    "success": true,
+    "committed": false
   }
 }
 ```
 
 **Parameters:**
 - `id` (number, required): Surface ID to receive focus
+- `auto_commit` (boolean, optional): If `true`, commits changes immediately. Default: `false`
 
 **Returns:**
 - `success` (boolean): Always `true` on success
+- `committed` (boolean): Reflects whether changes were committed
 
 **Errors:**
 - `-32000`: Surface not found
@@ -580,9 +613,6 @@ Route keyboard and pointer input focus to an IVI surface.
 - Removes focus from the previously focused surface
 - Focus change notifications are sent to both old and new focused surfaces
 - By default, changes are queued (not committed). Use `commit` method or `auto_commit` parameter.
-
-**Optional Parameters:**
-- `auto_commit` (boolean, optional): If `true`, commits changes immediately. Default: `false`
 
 ---
 
@@ -656,12 +686,37 @@ Response:
   "id": 100,
   "result": {
     "layers": [
-      { "id": 5000, "visibility": true, "opacity": 1.0 },
-      { "id": 5001, "visibility": false, "opacity": 0.5 }
+      {
+        "id": 5000,
+        "src_rect": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+        "dest_rect": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+        "visibility": true,
+        "opacity": 1.0,
+        "orientation": "Normal"
+      },
+      {
+        "id": 5001,
+        "src_rect": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+        "dest_rect": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+        "visibility": false,
+        "opacity": 0.5,
+        "orientation": "Normal"
+      }
     ]
   }
 }
 ```
+
+**Parameters:** None
+
+**Returns:**
+- `layers` (array): Array of layer objects, each containing:
+  - `id` (number): Layer ID
+  - `src_rect` (object): Source rectangle with `x`, `y`, `width`, `height`
+  - `dest_rect` (object): Destination rectangle with `x`, `y`, `width`, `height`
+  - `visibility` (boolean): Whether the layer is visible
+  - `opacity` (number): Opacity value (0.0 - 1.0)
+  - `orientation` (string): Layer orientation
 
 ---
 
@@ -678,11 +733,89 @@ Response:
 ```json
 {
   "id": 101,
-  "result": { "id": 5000, "visibility": true, "opacity": 1.0 }
+  "result": {
+    "id": 5000,
+    "src_rect": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+    "dest_rect": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+    "visibility": true,
+    "opacity": 1.0,
+    "orientation": "Normal"
+  }
 }
 ```
 
-Errors: `-32602` for invalid id
+**Parameters:**
+- `id` (number, required): Layer ID
+
+Errors: `-32602` for invalid or missing `id`
+
+---
+
+### create_layer
+
+Create a new IVI layer with the specified ID and dimensions.
+
+Request:
+```json
+{
+  "id": 110,
+  "method": "create_layer",
+  "params": { "id": 5000, "width": 1920, "height": 1080 }
+}
+```
+
+Response:
+```json
+{
+  "id": 110,
+  "result": { "id": 5000, "committed": false }
+}
+```
+
+**Parameters:**
+- `id` (number, required): Layer ID to create
+- `width` (number, required): Layer width in pixels (must be positive)
+- `height` (number, required): Layer height in pixels (must be positive)
+- `auto_commit` (boolean, optional): If `true`, commits changes immediately. Default: `false`
+
+**Returns:**
+- `id` (number): ID of the created layer
+- `committed` (boolean): Reflects whether changes were committed
+
+Errors: `-32602` for invalid dimensions, `-32603` if creation fails
+
+---
+
+### destroy_layer
+
+Destroy an existing IVI layer.
+
+Request:
+```json
+{
+  "id": 111,
+  "method": "destroy_layer",
+  "params": { "id": 5000 }
+}
+```
+
+Response:
+```json
+{
+  "id": 111,
+  "result": { "success": true, "committed": false }
+}
+```
+
+**Parameters:**
+- `id` (number, required): Layer ID to destroy
+- `auto_commit` (boolean, optional): If `true`, commits changes immediately. Default: `false`
+
+**Returns:**
+- `success` (boolean): Always `true` on success
+- `committed` (boolean): Reflects whether changes were committed
+
+Errors: `-32000` if layer not found
 
 ---
 
@@ -704,7 +837,11 @@ Response:
 { "id": 100, "result": { "success": true, "committed": false } }
 ```
 
-Optional param: `auto_commit` (bool)
+**Parameters:**
+- `id` (number, required): Layer ID
+- `x`, `y` (number, required): Source position
+- `width`, `height` (number, required): Source dimensions (must be positive)
+- `auto_commit` (boolean, optional): If `true`, commits immediately. Default: `false`
 
 ---
 
@@ -764,36 +901,323 @@ Response:
 
 Errors: `-32602` for invalid opacity
 
+Optional param: `auto_commit` (bool)
+
 ---
 
-## Event Notifications
+### set_layer_surfaces
 
-Clients may subscribe to real-time events. Subscriptions are per-client and selective by event type. Each client has a best-effort FIFO buffer (default 100); oldest notifications are dropped when full.
-
-- Delivery: Newline-delimited JSON-RPC notifications (no `id`)
-- Filtering: By event type (no per-surface filtering)
-- Multiple clients: Supported
-
-Supported event types:
-- SurfaceCreated, SurfaceDestroyed, GeometryChanged, VisibilityChanged, OpacityChanged, OrientationChanged, ZOrderChanged, FocusChanged
-- LayerCreated, LayerDestroyed, LayerVisibilityChanged, LayerOpacityChanged
-
-### subscribe
+Replace all surfaces on a layer with the specified set (in render order, first = bottommost).
 
 Request:
 ```json
 {
-  "id": 200,
-  "method": "subscribe",
-  "params": { "event_types": ["SurfaceCreated", "GeometryChanged", "FocusChanged"] }
+  "id": 120,
+  "method": "set_layer_surfaces",
+  "params": { "layer_id": 5000, "surface_ids": [1000, 1001, 1002] }
 }
 ```
 
 Response:
 ```json
 {
+  "id": 120,
+  "result": { "layer_id": 5000, "surface_ids": [1000, 1001, 1002], "committed": false }
+}
+```
+
+**Parameters:**
+- `layer_id` (number, required): Layer ID
+- `surface_ids` (array, required): Ordered array of surface IDs (first = bottommost, last = topmost)
+- `auto_commit` (boolean, optional): Default: `false`
+
+Errors: `-32603` if layer or any surface not found
+
+---
+
+### add_surface_to_layer
+
+Add a surface to a layer as the topmost element.
+
+Request:
+```json
+{
+  "id": 121,
+  "method": "add_surface_to_layer",
+  "params": { "layer_id": 5000, "surface_id": 1002 }
+}
+```
+
+Response:
+```json
+{
+  "id": 121,
+  "result": { "layer_id": 5000, "surface_id": 1002, "committed": false }
+}
+```
+
+**Parameters:**
+- `layer_id` (number, required): Layer ID
+- `surface_id` (number, required): Surface ID to add
+- `auto_commit` (boolean, optional): Default: `false`
+
+---
+
+### remove_surface_from_layer
+
+Remove a surface from a layer.
+
+Request:
+```json
+{
+  "id": 122,
+  "method": "remove_surface_from_layer",
+  "params": { "layer_id": 5000, "surface_id": 1001 }
+}
+```
+
+Response:
+```json
+{
+  "id": 122,
+  "result": { "layer_id": 5000, "surface_id": 1001, "committed": false }
+}
+```
+
+**Parameters:**
+- `layer_id` (number, required): Layer ID
+- `surface_id` (number, required): Surface ID to remove
+- `auto_commit` (boolean, optional): Default: `false`
+
+---
+
+### get_layer_surfaces
+
+Get the list of surfaces assigned to a layer, in render order (first = bottommost, last = topmost).
+
+Request:
+```json
+{ "id": 123, "method": "get_layer_surfaces", "params": { "layer_id": 5000 } }
+```
+
+Response:
+```json
+{
+  "id": 123,
+  "result": { "surface_ids": [1000, 1001, 1002] }
+}
+```
+
+**Parameters:**
+- `layer_id` (number, required): Layer ID
+
+Errors: `-32603` if layer not found
+
+---
+
+### list_screens
+
+List all available screens (compositor outputs).
+
+Request:
+```json
+{ "id": 200, "method": "list_screens", "params": {} }
+```
+
+Response:
+```json
+{
   "id": 200,
-  "result": { "success": true, "subscribed": ["SurfaceCreated", "GeometryChanged", "FocusChanged"] }
+  "result": {
+    "screens": [
+      {
+        "name": "HDMI-A-1",
+        "width": 1920,
+        "height": 1080,
+        "x": 0,
+        "y": 0,
+        "transform": "Normal",
+        "enabled": true,
+        "scale": 1
+      }
+    ]
+  }
+}
+```
+
+**Parameters:** None
+
+---
+
+### get_screen
+
+Get properties of a specific screen by name.
+
+Request:
+```json
+{ "id": 201, "method": "get_screen", "params": { "name": "HDMI-A-1" } }
+```
+
+Response:
+```json
+{
+  "id": 201,
+  "result": {
+    "name": "HDMI-A-1",
+    "width": 1920,
+    "height": 1080,
+    "x": 0,
+    "y": 0,
+    "transform": "Normal",
+    "enabled": true,
+    "scale": 1
+  }
+}
+```
+
+**Parameters:**
+- `name` (string, required): Screen name
+
+Errors: `-32603` if screen not found
+
+---
+
+### get_screen_layers
+
+Get the list of layer IDs currently assigned to a screen.
+
+Request:
+```json
+{ "id": 202, "method": "get_screen_layers", "params": { "screen_name": "HDMI-A-1" } }
+```
+
+Response:
+```json
+{
+  "id": 202,
+  "result": { "layer_ids": [5000, 5001] }
+}
+```
+
+**Parameters:**
+- `screen_name` (string, required): Screen name
+
+Errors: `-32603` if screen not found
+
+---
+
+### get_layer_screens
+
+Get the list of screen names that a layer is assigned to.
+
+Request:
+```json
+{ "id": 203, "method": "get_layer_screens", "params": { "layer_id": 5000 } }
+```
+
+Response:
+```json
+{
+  "id": 203,
+  "result": { "screen_names": ["HDMI-A-1"] }
+}
+```
+
+**Parameters:**
+- `layer_id` (number, required): Layer ID
+
+Errors: `-32000` if layer not found
+
+---
+
+### add_layers_to_screen
+
+Set the render order of layers on a screen. This replaces the current layer assignment.
+
+Request:
+```json
+{
+  "id": 204,
+  "method": "add_layers_to_screen",
+  "params": { "screen_name": "HDMI-A-1", "layer_ids": [5000, 5001] }
+}
+```
+
+Response:
+```json
+{
+  "id": 204,
+  "result": { "screen_name": "HDMI-A-1", "layer_ids": [5000, 5001], "committed": false }
+}
+```
+
+**Parameters:**
+- `screen_name` (string, required): Screen name
+- `layer_ids` (array, required): Ordered list of layer IDs
+- `auto_commit` (boolean, optional): Default: `false`
+
+Errors: `-32603` if screen or any layer not found
+
+---
+
+### remove_layer_from_screen
+
+Remove a specific layer from a screen.
+
+Request:
+```json
+{
+  "id": 205,
+  "method": "remove_layer_from_screen",
+  "params": { "screen_name": "HDMI-A-1", "layer_id": 5001 }
+}
+```
+
+Response:
+```json
+{
+  "id": 205,
+  "result": { "screen_name": "HDMI-A-1", "layer_id": 5001, "committed": false }
+}
+```
+
+**Parameters:**
+- `screen_name` (string, required): Screen name
+- `layer_id` (number, required): Layer ID to remove
+- `auto_commit` (boolean, optional): Default: `false`
+
+Errors: `-32000` if layer not found, `-32603` if screen not found
+
+---
+
+## Event Notifications
+
+Clients may subscribe to real-time events. Subscriptions are per-client and selective by event type. Each client has a best-effort FIFO buffer (default 100); oldest notifications are dropped when full.
+
+- Delivery: Length-prefixed JSON-RPC notifications (no `id`) sent on the subscribed connection
+- Filtering: By event type (no per-surface filtering)
+- Multiple clients: Supported
+
+Supported event types:
+- `SurfaceCreated`, `SurfaceDestroyed`, `SourceGeometryChanged`, `DestinationGeometryChanged`, `VisibilityChanged`, `OpacityChanged`, `OrientationChanged`, `ZOrderChanged`, `FocusChanged`
+- `LayerCreated`, `LayerDestroyed`, `LayerVisibilityChanged`, `LayerOpacityChanged`
+
+### subscribe
+
+Request:
+```json
+{
+  "id": 300,
+  "method": "subscribe",
+  "params": { "event_types": ["SurfaceCreated", "SourceGeometryChanged", "FocusChanged"] }
+}
+```
+
+Response:
+```json
+{
+  "id": 300,
+  "result": { "success": true, "subscribed": ["SurfaceCreated", "SourceGeometryChanged", "FocusChanged"] }
 }
 ```
 
@@ -802,17 +1226,17 @@ Response:
 Request:
 ```json
 {
-  "id": 201,
+  "id": 301,
   "method": "unsubscribe",
-  "params": { "event_types": ["GeometryChanged"] }
+  "params": { "event_types": ["SourceGeometryChanged"] }
 }
 ```
 
 Response:
 ```json
 {
-  "id": 201,
-  "result": { "success": true, "unsubscribed": ["GeometryChanged"] }
+  "id": 301,
+  "result": { "success": true, "unsubscribed": ["SourceGeometryChanged"] }
 }
 ```
 
@@ -820,12 +1244,12 @@ Response:
 
 Request:
 ```json
-{ "id": 202, "method": "list_subscriptions", "params": {} }
+{ "id": 302, "method": "list_subscriptions", "params": {} }
 ```
 
 Response:
 ```json
-{ "id": 202, "result": { "subscriptions": ["SurfaceCreated", "FocusChanged"] } }
+{ "id": 302, "result": { "subscriptions": ["SurfaceCreated", "FocusChanged"] } }
 ```
 
 ### Notification Format
@@ -841,22 +1265,39 @@ Common shape:
 ```
 
 Examples:
+
 - SurfaceCreated
 ```json
 { "method": "notification", "params": { "event_type": "SurfaceCreated", "surface_id": 1000 } }
 ```
 
-- GeometryChanged
+- SurfaceDestroyed
+```json
+{ "method": "notification", "params": { "event_type": "SurfaceDestroyed", "surface_id": 1000 } }
+```
+
+- SourceGeometryChanged
 ```json
 {
   "method": "notification",
   "params": {
-    "event_type": "GeometryChanged",
+    "event_type": "SourceGeometryChanged",
     "surface_id": 1000,
-    "old_position": {"x": 0, "y": 0},
-    "new_position": {"x": 100, "y": 100},
-    "old_size": {"width": 1920, "height": 1080},
-    "new_size": {"width": 1280, "height": 720}
+    "old_rect": {"x": 0, "y": 0, "width": 1920, "height": 1080},
+    "new_rect": {"x": 0, "y": 0, "width": 960, "height": 540}
+  }
+}
+```
+
+- DestinationGeometryChanged
+```json
+{
+  "method": "notification",
+  "params": {
+    "event_type": "DestinationGeometryChanged",
+    "surface_id": 1000,
+    "old_rect": {"x": 0, "y": 0, "width": 1920, "height": 1080},
+    "new_rect": {"x": 100, "y": 100, "width": 1280, "height": 720}
   }
 }
 ```
@@ -909,14 +1350,14 @@ IVI surfaces support sophisticated buffer management through three types of size
 
 - **Original Size (orig_size)**: The native dimensions of the application's Wayland buffer. This represents the actual pixel dimensions provided by the application.
 
-- **Source Rectangle (src_position, src_size)**: Defines which portion of the application buffer to display. This enables cropping - you can display only part of the buffer. For example, you might show only the top-left quarter of a 1920×1080 buffer.
+- **Source Rectangle (src_rect)**: Defines which portion of the application buffer to display. This enables cropping - you can display only part of the buffer. For example, you might show only the top-left quarter of a 1920×1080 buffer.
 
-- **Destination Rectangle (dest_position, dest_size)**: Defines where and at what size to display the selected source content on screen. This enables positioning and scaling independently of the source.
+- **Destination Rectangle (dest_rect)**: Defines where and at what size to display the selected source content on screen. This enables positioning and scaling independently of the source.
 
 **Example Use Case**: Display the top-left quarter of a 1920×1080 application buffer at 50% scale:
 - `orig_size`: 1920×1080 (application buffer size)
-- `src_position`: (0, 0), `src_size`: 960×540 (crop to top-left quarter)
-- `dest_position`: (100, 100), `dest_size`: 480×270 (display at 50% scale, positioned at screen coordinates 100,100)
+- `src_rect`: `{"x": 0, "y": 0, "width": 960, "height": 540}` (crop to top-left quarter)
+- `dest_rect`: `{"x": 100, "y": 100, "width": 480, "height": 270}` (display at 50% scale, at screen coordinates 100,100)
 
 ## Data Types
 
@@ -929,26 +1370,60 @@ IVI surfaces support sophisticated buffer management through three types of size
     width: number,         // Original application buffer width in pixels
     height: number         // Original application buffer height in pixels
   },
-  src_position: {
+  src_rect: {
     x: number,             // Source rectangle X coordinate
-    y: number              // Source rectangle Y coordinate
-  },
-  src_size: {
+    y: number,             // Source rectangle Y coordinate
     width: number,         // Source rectangle width in pixels
     height: number         // Source rectangle height in pixels
   },
-  dest_position: {
+  dest_rect: {
     x: number,             // Destination rectangle X coordinate on screen
-    y: number              // Destination rectangle Y coordinate on screen
-  },
-  dest_size: {
+    y: number,             // Destination rectangle Y coordinate on screen
     width: number,         // Destination rectangle width on screen
     height: number         // Destination rectangle height on screen
   },
   visibility: boolean,     // true = visible, false = hidden
   opacity: number,         // 0.0 (transparent) to 1.0 (opaque)
-  orientation: string,     // "Normal" | "Rotate90" | "Rotate180" | "Rotate270"
+  orientation: string,     // See Orientation Values below
   z_order: number          // Stacking order (higher = on top)
+}
+```
+
+### Layer Object
+
+```typescript
+{
+  id: number,              // Unique layer identifier
+  src_rect: {
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  },
+  dest_rect: {
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  },
+  visibility: boolean,
+  opacity: number,
+  orientation: string
+}
+```
+
+### Screen Object
+
+```typescript
+{
+  name: string,            // Screen name (e.g. "HDMI-A-1")
+  width: number,           // Screen width in pixels
+  height: number,          // Screen height in pixels
+  x: number,               // Global X coordinate
+  y: number,               // Global Y coordinate
+  transform: string,       // Screen transform
+  enabled: boolean,        // Whether the screen is active
+  scale: number            // Scale factor
 }
 ```
 
@@ -959,7 +1434,11 @@ IVI surfaces support sophisticated buffer management through three types of size
 | `"Normal"` | 0° | No rotation |
 | `"Rotate90"` | 90° | Rotated 90° clockwise |
 | `"Rotate180"` | 180° | Rotated 180° |
-| `"Rotate270"` | 270° | Rotated 270° clockwise (90° counter-clockwise) |
+| `"Rotate270"` | 270° | Rotated 270° clockwise |
+| `"Flipped"` | — | Horizontally flipped |
+| `"Flipped90"` | — | Flipped + 90° rotation |
+| `"Flipped180"` | — | Flipped + 180° rotation |
+| `"Flipped270"` | — | Flipped + 270° rotation |
 
 ## Examples
 
@@ -968,6 +1447,7 @@ IVI surfaces support sophisticated buffer management through three types of size
 ```python
 #!/usr/bin/env python3
 import socket
+import struct
 import json
 
 class IVIController:
@@ -975,16 +1455,26 @@ class IVIController:
         self.socket_path = socket_path
         self.sock = None
         self.request_id = 0
-    
+
     def connect(self):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.connect(self.socket_path)
-    
+
     def disconnect(self):
         if self.sock:
             self.sock.close()
             self.sock = None
-    
+
+    def _recv_exact(self, n):
+        """Read exactly n bytes from the socket."""
+        data = b''
+        while len(data) < n:
+            chunk = self.sock.recv(n - len(data))
+            if not chunk:
+                raise Exception("Connection closed")
+            data += chunk
+        return data
+
     def _send_request(self, method, params):
         self.request_id += 1
         request = {
@@ -992,17 +1482,23 @@ class IVIController:
             "method": method,
             "params": params
         }
-        self.sock.sendall(json.dumps(request).encode() + b'\n')
-        response = json.loads(self.sock.recv(4096).decode())
-        
+        # Length-prefixed framing: 4-byte big-endian length + JSON body
+        body = json.dumps(request).encode()
+        self.sock.sendall(struct.pack('>I', len(body)) + body)
+
+        # Read length-prefixed response
+        header = self._recv_exact(4)
+        length = struct.unpack('>I', header)[0]
+        response = json.loads(self._recv_exact(length).decode())
+
         if 'error' in response:
             raise Exception(f"RPC Error {response['error']['code']}: {response['error']['message']}")
-        
+
         return response.get('result')
-    
+
     def list_surfaces(self):
         return self._send_request('list_surfaces', {})
-    
+
     def get_surface(self, surface_id):
         return self._send_request('get_surface', {'id': surface_id})
 
@@ -1025,7 +1521,7 @@ class IVIController:
 
     def set_surface_focus(self, surface_id):
         return self._send_request('set_surface_focus', {'id': surface_id})
-    
+
     def commit(self):
         return self._send_request('commit', {})
 
@@ -1033,16 +1529,21 @@ class IVIController:
 if __name__ == '__main__':
     controller = IVIController()
     controller.connect()
-    
+
     try:
         # List all surfaces
         surfaces = controller.list_surfaces()
         print(f"Found {len(surfaces['surfaces'])} surfaces")
-        
+
         # Get first surface
         if surfaces['surfaces']:
             surface_id = surfaces['surfaces'][0]['id']
-            
+            surface = surfaces['surfaces'][0]
+
+            # Access rect fields
+            print(f"Source rect: {surface['src_rect']}")
+            print(f"Dest rect: {surface['dest_rect']}")
+
             # Example 1: Atomic updates (recommended for multiple changes)
             print("\n=== Atomic Update Example ===")
             # Queue multiple changes
@@ -1070,115 +1571,172 @@ if __name__ == '__main__':
             controller.set_surface_focus(surface_id)
             controller.commit()
             print(f"Atomically updated surface {surface_id}: z-order and focus")
-    
+
     finally:
         controller.disconnect()
 ```
 
+### Python Notification Listener Example
+
+```python
+#!/usr/bin/env python3
+import socket
+import struct
+import json
+import threading
+
+class IVINotificationListener:
+    """
+    Opens its own dedicated connection for receiving notifications so that
+    unsolicited messages do not interfere with RPC responses.
+    """
+    def __init__(self, socket_path='/tmp/weston-ivi-controller.sock'):
+        self.socket_path = socket_path
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.connect(socket_path)
+        self.request_id = 0
+        self.callbacks = {}      # event_type -> list of callables
+        self.catch_all = []
+        self._thread = None
+        self._stop = False
+
+    def _recv_exact(self, n):
+        data = b''
+        while len(data) < n:
+            chunk = self.sock.recv(n - len(data))
+            if not chunk:
+                raise Exception("Connection closed")
+            data += chunk
+        return data
+
+    def _send_rpc(self, method, params):
+        self.request_id += 1
+        body = json.dumps({"id": self.request_id, "method": method, "params": params}).encode()
+        self.sock.sendall(struct.pack('>I', len(body)) + body)
+        header = self._recv_exact(4)
+        length = struct.unpack('>I', header)[0]
+        return json.loads(self._recv_exact(length).decode())
+
+    def on(self, event_type, callback):
+        """Register a callback for a specific event type."""
+        self.callbacks.setdefault(event_type, []).append(callback)
+
+    def on_all(self, callback):
+        """Register a catch-all callback for every event type."""
+        self.catch_all.append(callback)
+
+    def start(self, event_types):
+        """Subscribe and start background reader thread."""
+        self._send_rpc('subscribe', {'event_types': event_types})
+        self._stop = False
+        self._thread = threading.Thread(target=self._reader, daemon=True)
+        self._thread.start()
+
+    def _reader(self):
+        self.sock.settimeout(0.1)
+        while not self._stop:
+            try:
+                header = self._recv_exact(4)
+                length = struct.unpack('>I', header)[0]
+                msg = json.loads(self._recv_exact(length).decode())
+                if 'id' in msg:
+                    continue  # stray RPC response, skip
+                params = msg.get('params', {})
+                event_type = params.get('event_type')
+                for cb in self.callbacks.get(event_type, []):
+                    cb(params)
+                for cb in self.catch_all:
+                    cb(params)
+            except socket.timeout:
+                continue
+            except Exception:
+                break
+
+    def stop(self):
+        self._stop = True
+        if self._thread:
+            self._thread.join()
+        self.sock.close()
+
+# Usage
+listener = IVINotificationListener()
+
+listener.on('SurfaceCreated', lambda p: print(f"Surface created: {p['surface_id']}"))
+listener.on('VisibilityChanged', lambda p:
+    print(f"Surface {p['surface_id']} visibility: {p['old_visibility']} -> {p['new_visibility']}"))
+listener.on_all(lambda p: print(f"Event: {p['event_type']}"))
+
+listener.start(['SurfaceCreated', 'SurfaceDestroyed', 'VisibilityChanged'])
+
+# ... listener fires callbacks in background thread ...
+
+listener.stop()
+```
+
 ### Bash Script Example
+
+> **Note:** The protocol uses 4-byte big-endian length-prefixed framing, which plain shell tools like `nc` do not support natively. Use the `ivi-cli` tool for shell scripting, or write a small Python/C helper.
 
 ```bash
 #!/bin/bash
 
-SOCKET="/tmp/weston-ivi-controller.sock"
-
-# Function to send RPC request
-send_rpc() {
-    local method=$1
-    local params=$2
-    local id=$((RANDOM))
-    
-    echo "{\"id\":$id,\"method\":\"$method\",\"params\":$params}" | nc -U "$SOCKET"
-}
-
-# List all surfaces
-echo "Listing surfaces..."
-send_rpc "list_surfaces" "{}"
-
-# Get specific surface
-echo "Getting surface 1000..."
-send_rpc "get_surface" '{"id":1000}'
-
-# Move and resize surface
-echo "Moving and resizing surface to (200, 300) with 1024x768..."
-send_rpc "set_surface_destination_rectangle" '{"id":1000,"x":200,"y":300,"width":1024,"height":768}'
-
-# Hide surface
-echo "Hiding surface..."
-send_rpc "set_surface_visibility" '{"id":1000,"visible":false}'
-
-# Show surface with opacity
-echo "Showing surface with 50% opacity..."
-send_rpc "set_surface_visibility" '{"id":1000,"visible":true}'
-send_rpc "set_surface_opacity" '{"id":1000,"opacity":0.5}'
+# Use ivi-cli for shell scripting
+ivi-cli list-surfaces
+ivi-cli get-surface --id 1000
+ivi-cli set-surface-destination-rectangle --id 1000 --x 200 --y 300 --width 1024 --height 768
+ivi-cli set-surface-visibility --id 1000 --visible false
+ivi-cli commit
 ```
 
-### C Example
+### C Example (using ivi_client.h)
+
+The recommended way to use the protocol from C is via the `ivi_client.h` library, which handles framing automatically:
 
 ```c
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <unistd.h>
+#include "ivi_client.h"
 
-#define SOCKET_PATH "/tmp/weston-ivi-controller.sock"
-#define BUFFER_SIZE 4096
+int main(void) {
+    char err[256];
 
-int send_rpc_request(int sock, const char *request) {
-    char buffer[BUFFER_SIZE];
-    
-    // Send request
-    if (send(sock, request, strlen(request), 0) < 0) {
-        perror("send");
-        return -1;
-    }
-    
-    // Receive response
-    ssize_t n = recv(sock, buffer, BUFFER_SIZE - 1, 0);
-    if (n < 0) {
-        perror("recv");
-        return -1;
-    }
-    
-    buffer[n] = '\0';
-    printf("Response: %s\n", buffer);
-    
-    return 0;
-}
+    // --- Synchronous RPC ---
+    IviClient *client = ivi_client_connect(NULL, err, sizeof(err));
+    if (!client) { fprintf(stderr, "connect: %s\n", err); return 1; }
 
-int main() {
-    int sock;
-    struct sockaddr_un addr;
-    
-    // Create socket
-    sock = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (sock < 0) {
-        perror("socket");
-        return 1;
+    IviSurface *surfaces = NULL;
+    size_t count = 0;
+    if (ivi_list_surfaces(client, &surfaces, &count, err, sizeof(err)) == OK) {
+        printf("Found %zu surfaces\n", count);
+        ivi_free_surfaces(surfaces, count);
     }
-    
-    // Connect to controller
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
-    
-    if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("connect");
-        close(sock);
-        return 1;
+
+    ivi_set_surface_destination_rectangle(client, 1000, 100, 200, 800, 600, err, sizeof(err));
+    ivi_commit(client, err, sizeof(err));
+    ivi_client_disconnect(client);
+
+    // --- Event Notifications ---
+    void on_surface_created(const IviNotification *n, void *ud) {
+        printf("Surface created: %u\n", n->object_id);
     }
-    
-    // List surfaces
-    send_rpc_request(sock, "{\"id\":1,\"method\":\"list_surfaces\",\"params\":{}}\n");
-    
-    // Set destination rectangle
-    send_rpc_request(sock, "{\"id\":2,\"method\":\"set_surface_destination_rectangle\",\"params\":{\"id\":1000,\"x\":100,\"y\":200,\"width\":800,\"height\":600}}\n");
-    
-    // Close connection
-    close(sock);
-    
+    void on_visibility(const IviNotification *n, void *ud) {
+        printf("Surface %u visibility: %d -> %d\n", n->object_id,
+               n->visibility.old_visibility, n->visibility.new_visibility);
+    }
+
+    NotificationListener *listener =
+        ivi_notification_listener_new(NULL, err, sizeof(err));
+    if (!listener) { fprintf(stderr, "listener: %s\n", err); return 1; }
+
+    ivi_notification_listener_on(listener, SURFACE_CREATED,    on_surface_created, NULL);
+    ivi_notification_listener_on(listener, VISIBILITY_CHANGED, on_visibility,      NULL);
+
+    IviEventType types[] = { SURFACE_CREATED, VISIBILITY_CHANGED };
+    ivi_notification_listener_start(listener, types, 2, err, sizeof(err));
+
+    // ... callbacks fire in background thread ...
+
+    ivi_notification_listener_stop(listener);
+    ivi_notification_listener_free(listener);
     return 0;
 }
 ```
@@ -1205,62 +1763,3 @@ int main() {
 ### Performance
 
 - **Batch operations**: If possible, batch multiple operations to reduce round trips
-- **Validate locally**: Validate parameters before sending to reduce error responses
-- **Cache surface list**: Cache the surface list and only refresh when needed
-
-### Thread Safety
-
-- **One connection per thread**: Don't share socket connections across threads
-- **Synchronize access**: If sharing a connection, synchronize access with locks
-
-## Troubleshooting
-
-### Connection Refused
-
-**Problem:** Cannot connect to the socket
-
-**Solutions:**
-- Verify Weston is running with the IVI controller plugin loaded
-- Check the socket path is correct
-- Ensure you have permissions to access the socket
-- Check `RUST_LOG` output for initialization errors
-
-### Parse Errors
-
-**Problem:** Receiving parse error (-32700)
-
-**Solutions:**
-- Ensure JSON is valid (use a JSON validator)
-- Verify newline termination (`\n`)
-- Check for proper UTF-8 encoding
-
-### Surface Not Found
-
-**Problem:** Receiving surface not found error (-32000)
-
-**Solutions:**
-- Use `list_surfaces` to get valid surface IDs
-- Verify the surface still exists (it may have been destroyed)
-- Check for typos in the surface ID
-
-### Invalid Parameters
-
-**Problem:** Receiving invalid params error (-32602)
-
-**Solutions:**
-- Check parameter types match the specification
-- Verify values are within valid ranges
-- Ensure all required parameters are present
-
-## Version History
-
-- **v0.1.0** - Initial release
-  - Basic surface control operations
-  - UNIX domain socket transport
-  - JSON-RPC 2.0 protocol
-
-## See Also
-
-- [README.md](../README.md) - Main project documentation
-- [Weston IVI Shell Documentation](https://wayland.pages.freedesktop.org/weston/toc/ivi-shell.html)
-- [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification)

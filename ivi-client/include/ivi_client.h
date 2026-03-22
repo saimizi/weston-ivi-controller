@@ -45,6 +45,33 @@ typedef enum IviErrorCode {
 } IviErrorCode;
 
 /*
+ Event type enum for C consumers.
+ */
+typedef enum IviEventType {
+    SURFACE_CREATED = 0,
+    SURFACE_DESTROYED = 1,
+    SOURCE_GEOMETRY_CHANGED = 2,
+    DESTINATION_GEOMETRY_CHANGED = 3,
+    VISIBILITY_CHANGED = 4,
+    OPACITY_CHANGED = 5,
+    ORIENTATION_CHANGED = 6,
+    Z_ORDER_CHANGED = 7,
+    FOCUS_CHANGED = 8,
+    LAYER_CREATED = 9,
+    LAYER_DESTROYED = 10,
+    LAYER_VISIBILITY_CHANGED = 11,
+    LAYER_OPACITY_CHANGED = 12,
+} IviEventType;
+
+/*
+ Indicates whether a notification refers to a surface or a layer.
+ */
+typedef enum IviObjectType {
+    SURFACE = 0,
+    LAYER = 1,
+} IviObjectType;
+
+/*
  C-compatible orientation enum
  */
 typedef enum IviOrientation {
@@ -59,6 +86,37 @@ typedef enum IviOrientation {
 } IviOrientation;
 
 typedef struct IviClient IviClient;
+
+/*
+ Listens for event notifications from the IVI controller.
+
+ Opens its own dedicated socket connection so that notifications are not
+ mixed with RPC responses on the shared `IviClient` connection.
+
+ # Example
+
+ ```no_run
+ use ivi_client::{NotificationListener, EventType};
+
+ # fn main() -> ivi_client::Result<()> {
+ let mut listener = NotificationListener::new(None)?;
+
+ listener.on(EventType::SurfaceCreated, |notif| {
+     println!("Surface created: {}", notif.params["surface_id"]);
+ });
+
+ listener.on_all(|notif| {
+     println!("Event: {:?}", notif.event_type);
+ });
+
+ listener.start(&[EventType::SurfaceCreated, EventType::VisibilityChanged])?;
+ // ... callbacks fire in background thread ...
+ listener.stop();
+ # Ok(())
+ # }
+ ```
+ */
+typedef struct NotificationListener NotificationListener;
 
 typedef uint32_t SurfaceId;
 
@@ -101,6 +159,82 @@ typedef struct IviLayer {
     float opacity;
     enum IviOrientation orientation;
 } IviLayer;
+
+/*
+ Visibility change data (old and new state).
+ */
+typedef struct IviVisibilityChange {
+    bool old_visibility;
+    bool new_visibility;
+} IviVisibilityChange;
+
+/*
+ Opacity change data (old and new value).
+ */
+typedef struct IviOpacityChange {
+    float old_opacity;
+    float new_opacity;
+} IviOpacityChange;
+
+/*
+ Geometry (rectangle) change data (old and new rectangle).
+ */
+typedef struct IviGeometryChange {
+    struct Rectangle old_rect;
+    struct Rectangle new_rect;
+} IviGeometryChange;
+
+/*
+ Z-order change data (old and new value).
+ */
+typedef struct IviZOrderChange {
+    int32_t old_z_order;
+    int32_t new_z_order;
+} IviZOrderChange;
+
+/*
+ Orientation change data (old and new value).
+ */
+typedef struct IviOrientationChange {
+    enum IviOrientation old_orientation;
+    enum IviOrientation new_orientation;
+} IviOrientationChange;
+
+/*
+ A notification event delivered to C callbacks.
+
+ Only the fields relevant to `event_type` are populated; all others are
+ zero-initialised. Check `object_type` to determine whether `object_id`
+ refers to a surface or a layer.
+
+ For `FocusChanged` events:
+   - `object_type`   = `SURFACE`
+   - `object_id`     = new focused surface ID (0 if none)
+   - `object_old_id` = previous focused surface ID (0 if none)
+ */
+typedef struct IviNotification {
+    enum IviEventType event_type;
+    enum IviObjectType object_type;
+    /*
+     Current object ID (surface or layer). For focus events: new focused surface.
+     */
+    uint32_t object_id;
+    /*
+     Previous object ID. Only meaningful for `FocusChanged` events.
+     */
+    uint32_t object_old_id;
+    struct IviVisibilityChange visibility;
+    struct IviOpacityChange opacity;
+    struct IviGeometryChange src_geometry;
+    struct IviGeometryChange dest_geometry;
+    struct IviZOrderChange z_order;
+    struct IviOrientationChange orientation;
+} IviNotification;
+
+/*
+ C callback type for notification events.
+ */
+typedef void (*IviNotificationCCallback)(const struct IviNotification *notif, void *user_data);
 
 /*
  Connect to the IVI controller
@@ -393,5 +527,85 @@ void ivi_free_surfaces(struct IviSurface *surfaces, uintptr_t count);
  - After calling this function, `layers` must not be used again
  */
 void ivi_free_layers(struct IviLayer *layers, uintptr_t count);
+
+/*
+ Create a notification listener with its own connection to the IVI controller.
+
+ # Safety
+
+ - `socket_path` must be a valid null-terminated C string or NULL
+ - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
+
+ # Returns
+
+ Returns a pointer to a `NotificationListener` on success, or NULL on failure.
+ */
+struct NotificationListener *ivi_notification_listener_new(const char *socket_path,
+                                                           char *error_buf,
+                                                           uintptr_t error_buf_len);
+
+/*
+ Stop and free a notification listener.
+
+ # Safety
+
+ - `listener` must be a valid pointer returned from `ivi_notification_listener_new`, or NULL
+ - After calling this function, `listener` must not be used again
+ */
+void ivi_notification_listener_free(struct NotificationListener *listener);
+
+/*
+ Register a C callback for a specific event type.
+
+ Multiple callbacks per event type are allowed.
+
+ # Safety
+
+ - `listener` must be a valid pointer returned from `ivi_notification_listener_new`
+ - `callback` must remain valid for the lifetime of the listener
+ - `user_data` is passed to the callback as-is; the caller is responsible for its lifetime
+ */
+enum IviErrorCode ivi_notification_listener_on(struct NotificationListener *listener,
+                                               enum IviEventType event_type,
+                                               IviNotificationCCallback callback,
+                                               void *user_data);
+
+/*
+ Register a C catch-all callback invoked for every event type.
+
+ # Safety
+
+ - `listener` must be a valid pointer returned from `ivi_notification_listener_new`
+ - `callback` must remain valid for the lifetime of the listener
+ - `user_data` is passed to the callback as-is; the caller is responsible for its lifetime
+ */
+enum IviErrorCode ivi_notification_listener_on_all(struct NotificationListener *listener,
+                                                   IviNotificationCCallback callback,
+                                                   void *user_data);
+
+/*
+ Subscribe to the specified event types and start the background reader thread.
+
+ # Safety
+
+ - `listener` must be a valid pointer returned from `ivi_notification_listener_new`
+ - `event_types` must be a valid pointer to an array of `count` `IviEventType` values, or NULL
+   if `count` is 0
+ - `error_buf` must be a valid pointer to a buffer of at least `error_buf_len` bytes, or NULL
+ */
+enum IviErrorCode ivi_notification_listener_start(struct NotificationListener *listener,
+                                                  const enum IviEventType *event_types,
+                                                  uintptr_t count,
+                                                  char *error_buf,
+                                                  uintptr_t error_buf_len);
+
+/*
+ Stop the background reader thread. Registered callbacks will no longer fire.
+
+ # Safety
+
+ - `listener` must be a valid pointer returned from `ivi_notification_listener_new`
+ */
+void ivi_notification_listener_stop(struct NotificationListener *listener);
 
 #endif /* IVI_CLIENT_H */

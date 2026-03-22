@@ -9,43 +9,49 @@ The IVI Client Library (`ivi-client`) is a reusable Rust library with C FFI bind
 ### High-Level Design
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     External Applications                    │
-├──────────────────────┬──────────────────────────────────────┤
-│   Rust Applications  │         C Applications               │
-│   (including CLI)    │                                      │
-│         │            │              │                        │
-│         ▼            │              ▼                        │
-│   ┌──────────┐      │      ┌──────────────┐               │
-│   │ Rust API │      │      │   C FFI API  │               │
-│   └────┬─────┘      │      └──────┬───────┘               │
-│        │            │              │                        │
-│        └────────────┴──────────────┘                        │
-│                     │                                        │
-│              ┌──────▼──────┐                                │
-│              │ IVI Client  │                                │
-│              │   Library   │                                │
-│              │             │                                │
-│              │ - Protocol  │                                │
-│              │ - Transport │                                │
-│              │ - Types     │                                │
-│              └──────┬──────┘                                │
-└─────────────────────┼─────────────────────────────────────┘
-                      │
-         ┌────────────▼────────────┐
-         │   UNIX Domain Socket    │
-         │ /tmp/weston-ivi-        │
-         │    controller.sock      │
-         └────────────┬────────────┘
-                      │
-         ┌────────────▼────────────┐
-         │  weston-ivi-controller  │
-         │      (JSON-RPC)         │
-         └────────────┬────────────┘
-                      │
-         ┌────────────▼────────────┐
-         │   Weston IVI Shell      │
-         └─────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                        External Applications                       │
+├──────────────────────────┬─────────────────────────────────────────┤
+│     Rust Applications    │          C Applications                 │
+│     (including CLI)      │                                         │
+│           │              │               │                         │
+│           ▼              │               ▼                         │
+│   ┌───────────────┐      │    ┌──────────────────┐                 │
+│   │   Rust API    │      │    │    C FFI API     │                 │
+│   │               │      │    │                  │                 │
+│   │  IviClient    │      │    │  ivi_client_*    │                 │
+│   │  Notification │      │    │  ivi_notif_*     │                 │
+│   │  Listener     │      │    │                  │                 │
+│   └───────┬───────┘      │    └────────┬─────────┘                 │
+│           │              │             │                           │
+│           └──────────────┴─────────────┘                           │
+│                          │                                         │
+│              ┌───────────▼──────────┐                              │
+│              │    IVI Client        │                              │
+│              │      Library         │                              │
+│              │                      │                              │
+│              │ - IviClient (RPC)    │                              │
+│              │ - Notification       │                              │
+│              │   Listener (events)  │                              │
+│              │ - Protocol           │                              │
+│              │ - Transport          │                              │
+│              └───────────┬──────────┘                              │
+└──────────────────────────┼─────────────────────────────────────────┘
+                           │
+              ┌────────────▼────────────┐
+              │   UNIX Domain Socket    │
+              │ /tmp/weston-ivi-        │
+              │    controller.sock      │
+              └────────────┬────────────┘
+                           │
+              ┌────────────▼────────────┐
+              │  weston-ivi-controller  │
+              │      (JSON-RPC)         │
+              └────────────┬────────────┘
+                           │
+              ┌────────────▼────────────┐
+              │   Weston IVI Shell      │
+              └─────────────────────────┘
 ```
 
 ### Component Layers
@@ -53,13 +59,14 @@ The IVI Client Library (`ivi-client`) is a reusable Rust library with C FFI bind
 #### 1. Public API Layer
 
 **Rust API (`client.rs`)**
-- Provides idiomatic Rust interface
+- `IviClient` — synchronous request/response operations
+- `NotificationListener` — callback-based event subscription with background thread
 - Uses `Result<T, IviError>` for error handling
 - Manages connection lifecycle
-- Handles request/response serialization
 
 **C FFI API (`ffi.rs`)**
-- Provides C-compatible function signatures
+- `ivi_client_*` — synchronous request/response operations
+- `ivi_notification_listener_*` — event subscription and callback registration
 - Uses error codes and error buffers
 - Manages memory allocation/deallocation
 - Translates between Rust and C types
@@ -99,10 +106,23 @@ The IVI Client Library (`ivi-client`) is a reusable Rust library with C FFI bind
    Application → client.list_surfaces()
               → send_request("list_surfaces", {})
               → JsonRpcRequest serialization
-              → Socket write with newline
-              → Socket read until newline
+              → Socket write (4-byte length prefix + JSON body)
+              → Socket read (length-prefixed frame)
               → JsonRpcResponse deserialization
               → Result<Vec<Surface>>
+   ```
+
+3. **Notification Flow**
+   ```
+   Application → NotificationListener::new()  (own socket connection)
+              → listener.on(SurfaceCreated, |n| { ... })
+              → listener.start(&[SurfaceCreated])
+              → subscribe RPC sent to server
+              → background thread started
+              → server sends {"method":"notification","params":{...}}
+              → background thread receives frame
+              → Notification::try_from_frame() parses it
+              → registered callbacks invoked
    ```
 
 3. **Error Handling**
@@ -116,10 +136,13 @@ The IVI Client Library (`ivi-client`) is a reusable Rust library with C FFI bind
 
 The library implements the same JSON-RPC protocol as documented in `control_interface.md`:
 
-- **Request Format**: `{"id": <number>, "method": "<method>", "params": {...}}\n`
-- **Response Format**: `{"id": <number>, "result": {...}}\n` or `{"id": <number>, "error": {...}}\n`
-- **Transport**: UNIX domain socket with newline-delimited messages
+- **Request Format**: `{"id": <number>, "method": "<method>", "params": {...}}`
+- **Response Format**: `{"id": <number>, "result": {...}}` or `{"id": <number>, "error": {...}}`
+- **Notification Format**: `{"method": "notification", "params": {"event_type": "<type>", ...}}` (no `id` field)
+- **Transport**: UNIX domain socket with 4-byte big-endian length-prefixed framing
 - **Default Socket**: `/tmp/weston-ivi-controller.sock`
+
+`IviClient` and `NotificationListener` each open their own independent socket connection. This keeps synchronous RPC responses and unsolicited notifications from interleaving on the same socket.
 
 ## API Design Principles
 
@@ -185,7 +208,7 @@ The library implements the same JSON-RPC protocol as documented in `control_inte
 ┌─────────────┐
 │ Protocol    │ Serialize: {"id":1,"method":"get_surface","params":{"id":1000}}
 └──────┬──────┘
-       │ Write to socket + '\n'
+       │ Write frame (4-byte length + JSON body)
        ▼
 ┌─────────────┐
 │ Transport   │
@@ -195,12 +218,12 @@ The library implements the same JSON-RPC protocol as documented in `control_inte
 ┌─────────────┐
 │ Controller  │ Process request
 └──────┬──────┘
-       │ {"id":1,"result":{"id":1000,"position":...}}
+       │ {"id":1,"result":{"id":1000,"src_rect":{...},"dest_rect":{...},...}}
        ▼
 ┌─────────────┐
 │ Transport   │
 └──────┬──────┘
-       │ Read from socket until '\n'
+       │ Read length-prefixed frame
        ▼
 ┌─────────────┐
 │ Protocol    │ Deserialize: JsonRpcResponse
@@ -250,6 +273,135 @@ The library implements the same JSON-RPC protocol as documented in `control_inte
 └─────────────┘
 ```
 
+## Event Notifications
+
+The library supports receiving unsolicited event notifications from the controller via `NotificationListener`. It opens a dedicated socket connection separate from `IviClient` and dispatches callbacks from a background thread.
+
+### Event Types
+
+| Rust `EventType`             | C `IviEventType`               | Triggered when                              |
+|------------------------------|--------------------------------|---------------------------------------------|
+| `SurfaceCreated`             | `SURFACE_CREATED`              | A new surface is created                    |
+| `SurfaceDestroyed`           | `SURFACE_DESTROYED`            | A surface is destroyed                      |
+| `SourceGeometryChanged`      | `SOURCE_GEOMETRY_CHANGED`      | Surface source rectangle changes            |
+| `DestinationGeometryChanged` | `DESTINATION_GEOMETRY_CHANGED` | Surface destination rectangle changes       |
+| `VisibilityChanged`          | `VISIBILITY_CHANGED`           | Surface visibility changes                  |
+| `OpacityChanged`             | `OPACITY_CHANGED`              | Surface opacity changes                     |
+| `OrientationChanged`         | `ORIENTATION_CHANGED`          | Surface orientation changes                 |
+| `ZOrderChanged`              | `Z_ORDER_CHANGED`              | Surface z-order changes                     |
+| `FocusChanged`               | `FOCUS_CHANGED`                | Input focus moves to a different surface    |
+| `LayerCreated`               | `LAYER_CREATED`                | A new layer is created                      |
+| `LayerDestroyed`             | `LAYER_DESTROYED`              | A layer is destroyed                        |
+| `LayerVisibilityChanged`     | `LAYER_VISIBILITY_CHANGED`     | Layer visibility changes                    |
+| `LayerOpacityChanged`        | `LAYER_OPACITY_CHANGED`        | Layer opacity changes                       |
+
+### `IviNotification` Structure (C)
+
+```c
+typedef struct IviNotification {
+    IviEventType         event_type;
+    IviObjectType        object_type;   // SURFACE or LAYER
+    uint32_t             object_id;     // surface/layer ID; for FocusChanged: new focused surface
+    uint32_t             object_old_id; // for FocusChanged: previous focused surface (else 0)
+    IviVisibilityChange  visibility;    // { old_visibility, new_visibility }
+    IviOpacityChange     opacity;       // { old_opacity, new_opacity }
+    IviGeometryChange    src_geometry;  // { old_rect, new_rect }
+    IviGeometryChange    dest_geometry; // { old_rect, new_rect }
+    IviZOrderChange      z_order;       // { old_z_order, new_z_order }
+    IviOrientationChange orientation;   // { old_orientation, new_orientation }
+} IviNotification;
+```
+
+Only the fields relevant to `event_type` are populated; all others are zero-initialised. The C user should check `event_type` before reading property sub-structs.
+
+### Rust API Example
+
+```rust
+use ivi_client::{EventType, NotificationListener};
+
+let mut listener = NotificationListener::new(None)?;
+
+// Register a per-type callback
+listener.on(EventType::SurfaceCreated, |notif| {
+    let id = notif.params["surface_id"].as_u64().unwrap_or(0);
+    println!("Surface created: {}", id);
+});
+
+// Register a catch-all callback
+listener.on_all(|notif| {
+    println!("Event: {:?}", notif.event_type);
+});
+
+// Subscribe and start background thread
+listener.start(&[
+    EventType::SurfaceCreated,
+    EventType::SurfaceDestroyed,
+    EventType::VisibilityChanged,
+])?;
+
+// ... callbacks fire in the background thread ...
+
+listener.stop(); // or just drop `listener`
+```
+
+### C API Example
+
+```c
+#include "ivi_client.h"
+#include <stdio.h>
+
+void on_surface_created(const IviNotification* notif, void* user_data) {
+    printf("Surface created: %u\n", notif->object_id);
+}
+
+void on_visibility_changed(const IviNotification* notif, void* user_data) {
+    printf("Surface %u visibility: %d -> %d\n",
+           notif->object_id,
+           notif->visibility.old_visibility,
+           notif->visibility.new_visibility);
+}
+
+void on_focus_changed(const IviNotification* notif, void* user_data) {
+    printf("Focus: %u -> %u\n", notif->object_old_id, notif->object_id);
+}
+
+int main(void) {
+    char err[256];
+
+    NotificationListener* listener =
+        ivi_notification_listener_new(NULL, err, sizeof(err));
+    if (!listener) { fprintf(stderr, "%s\n", err); return 1; }
+
+    ivi_notification_listener_on(listener, SURFACE_CREATED,    on_surface_created,    NULL);
+    ivi_notification_listener_on(listener, VISIBILITY_CHANGED, on_visibility_changed, NULL);
+    ivi_notification_listener_on(listener, FOCUS_CHANGED,      on_focus_changed,      NULL);
+
+    IviEventType types[] = { SURFACE_CREATED, VISIBILITY_CHANGED, FOCUS_CHANGED };
+    if (ivi_notification_listener_start(listener, types, 3, err, sizeof(err)) != OK) {
+        fprintf(stderr, "start failed: %s\n", err);
+        ivi_notification_listener_free(listener);
+        return 1;
+    }
+
+    // ... listener fires callbacks in background thread ...
+
+    ivi_notification_listener_stop(listener);
+    ivi_notification_listener_free(listener);
+    return 0;
+}
+```
+
+### Notification Listener Lifecycle (C)
+
+| Step | Function                           | Description                                  |
+|------|------------------------------------|----------------------------------------------|
+| 1    | `ivi_notification_listener_new()`  | Open dedicated socket connection             |
+| 2    | `ivi_notification_listener_on()`   | Register per-type callback (repeat as needed)|
+| 2    | `ivi_notification_listener_on_all()`| Register catch-all callback (optional)      |
+| 3    | `ivi_notification_listener_start()`| Subscribe + start background reader thread  |
+| 4    | `ivi_notification_listener_stop()` | Stop background thread (optional before free)|
+| 5    | `ivi_notification_listener_free()` | Stop thread, disconnect, free memory         |
+
 ## Thread Safety
 
 ### Rust API
@@ -264,12 +416,20 @@ For multi-threaded applications:
 - Use `Arc<Mutex<IviClient>>` for shared access
 - Consider connection pooling for high concurrency
 
+`NotificationListener` is thread-aware by design:
+- Callbacks are registered before calling `start()` (single-threaded setup)
+- The background reader thread is started by `start()`
+- Callbacks fire from the background thread — ensure they are thread-safe
+- `stop()` blocks until the background thread exits cleanly
+
 ### C FFI API
 
 The C API is thread-safe with proper usage:
 - Each `IviClient*` handle is independent
+- Each `NotificationListener*` handle is independent
 - No shared state between handles
 - Caller responsible for synchronization if sharing handles
+- Callbacks registered with `ivi_notification_listener_on*` fire from a background thread
 
 ## Memory Management
 
@@ -288,11 +448,13 @@ Memory management is explicit:
 - `ivi_client_connect()` allocates client handle
 - `ivi_list_surfaces()` allocates surface array
 - `ivi_list_layers()` allocates layer array
+- `ivi_notification_listener_new()` allocates listener handle (includes its own socket connection)
 
 **Deallocation:**
 - `ivi_client_disconnect()` frees client handle
 - `ivi_free_surfaces()` frees surface array
 - `ivi_free_layers()` frees layer array
+- `ivi_notification_listener_free()` stops the background thread, closes the socket, and frees the listener handle
 
 **Rules:**
 1. Always free allocated resources
@@ -309,14 +471,14 @@ use ivi_client::{IviClient, IviError};
 
 // Pattern 1: Early return with ?
 fn example1() -> Result<(), IviError> {
-    let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")?;
+    let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))?;
     let surfaces = client.list_surfaces()?;
     Ok(())
 }
 
 // Pattern 2: Match on specific errors
 fn example2() {
-    match IviClient::connect("/tmp/weston-ivi-controller.sock") {
+    match IviClient::new(Some("/tmp/weston-ivi-controller.sock")) {
         Ok(mut client) => {
             // Use client
         }
@@ -331,7 +493,7 @@ fn example2() {
 
 // Pattern 3: Unwrap with context
 fn example3() {
-    let mut client = IviClient::connect("/tmp/weston-ivi-controller.sock")
+    let mut client = IviClient::new(Some("/tmp/weston-ivi-controller.sock"))
         .expect("Failed to connect to IVI controller");
 }
 ```
@@ -355,13 +517,13 @@ if (client == NULL) {
 
 // Pattern 3: Switch on error codes
 switch (result) {
-    case IVI_OK:
+    case OK:
         // Success
         break;
-    case IVI_ERR_CONNECTION_FAILED:
+    case CONNECTION_FAILED:
         // Handle connection error
         break;
-    case IVI_ERR_REQUEST_FAILED:
+    case REQUEST_FAILED:
         // Handle request error
         break;
     default:
@@ -378,17 +540,16 @@ Reuse connections for multiple requests:
 
 ```rust
 // Good: Reuse connection
-let mut client = IviClient::connect(socket_path)?;
+let mut client = IviClient::new(Some(socket_path))?;
 for id in surface_ids {
-    client.set_surface_visibility(id, true)?;
+    client.set_surface_visibility(id, true, false)?;
 }
 client.commit()?;
 
 // Bad: Create new connection each time
 for id in surface_ids {
-    let mut client = IviClient::connect(socket_path)?;
-    client.set_surface_visibility(id, true)?;
-    client.commit()?;
+    let mut client = IviClient::new(Some(socket_path))?;
+    client.set_surface_visibility(id, true, true)?;
 }
 ```
 
@@ -398,18 +559,13 @@ Use atomic commits for multiple changes:
 
 ```rust
 // Good: Batch with commit
-client.set_surface_position(1000, 100, 200)?;
-client.set_surface_size(1000, 800, 600)?;
-client.set_surface_visibility(1000, true)?;
+client.set_surface_destination_rectangle(1000, 100, 200, 800, 600, false)?;
+client.set_surface_visibility(1000, true, false)?;
 client.commit()?; // Apply all at once
 
 // Bad: Individual commits
-client.set_surface_position(1000, 100, 200)?;
-client.commit()?;
-client.set_surface_size(1000, 800, 600)?;
-client.commit()?;
-client.set_surface_visibility(1000, true)?;
-client.commit()?;
+client.set_surface_destination_rectangle(1000, 100, 200, 800, 600, true)?;
+client.set_surface_visibility(1000, true, true)?;
 ```
 
 ### Memory Efficiency
@@ -668,10 +824,9 @@ Potential improvements for future versions:
 
 1. **Async API** - Add async/await support using tokio
 2. **Connection Pooling** - Built-in connection pool for multi-threaded apps
-3. **Event Subscriptions** - Support for receiving notifications
-4. **Retry Logic** - Automatic retry with exponential backoff
-5. **Connection Monitoring** - Health checks and reconnection
-6. **Batch API** - Send multiple requests in one round trip
+3. **Retry Logic** - Automatic retry with exponential backoff
+4. **Connection Monitoring** - Health checks and reconnection
+5. **Batch API** - Send multiple requests in one round trip
 
 ## References
 
