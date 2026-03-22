@@ -31,7 +31,7 @@ impl Display for IviSize {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Rectangle {
     pub x: i32,
     pub y: i32,
@@ -800,16 +800,18 @@ pub unsafe extern "C" fn ivi_free_layers(layers: *mut IviLayer, count: usize) {
 
 /// Indicates whether a notification refers to a surface or a layer.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum IviObjectType {
+    #[default]
     Surface = 0,
     Layer = 1,
 }
 
 /// Event type enum for C consumers.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum IviEventType {
+    #[default]
     SurfaceCreated = 0,
     SurfaceDestroyed = 1,
     SourceGeometryChanged = 2,
@@ -914,17 +916,6 @@ impl Default for IviOrientationChange {
     }
 }
 
-impl Default for Rectangle {
-    fn default() -> Self {
-        Self {
-            x: 0,
-            y: 0,
-            width: 0,
-            height: 0,
-        }
-    }
-}
-
 /// A notification event delivered to C callbacks.
 ///
 /// Only the fields relevant to `event_type` are populated; all others are
@@ -950,18 +941,6 @@ pub struct IviNotification {
     pub dest_geometry: IviGeometryChange,
     pub z_order: IviZOrderChange,
     pub orientation: IviOrientationChange,
-}
-
-impl Default for IviEventType {
-    fn default() -> Self {
-        IviEventType::SurfaceCreated
-    }
-}
-
-impl Default for IviObjectType {
-    fn default() -> Self {
-        IviObjectType::Surface
-    }
 }
 
 fn parse_rect(params: &serde_json::Value, key: &str) -> Rectangle {
