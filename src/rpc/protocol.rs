@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 pub enum EventType {
     // Surface events
     SurfaceCreated,
+    SurfaceContentReady,
+    SurfaceContentSizeChanged,
     SurfaceDestroyed,
     SourceGeometryChanged,
     DestinationGeometryChanged,

@@ -825,6 +825,8 @@ pub enum IviEventType {
     LayerDestroyed = 10,
     LayerVisibilityChanged = 11,
     LayerOpacityChanged = 12,
+    SurfaceContentReady = 13,
+    SurfaceContentSizeChanged = 14,
 }
 
 impl From<&EventType> for IviEventType {
@@ -843,6 +845,8 @@ impl From<&EventType> for IviEventType {
             EventType::LayerDestroyed => IviEventType::LayerDestroyed,
             EventType::LayerVisibilityChanged => IviEventType::LayerVisibilityChanged,
             EventType::LayerOpacityChanged => IviEventType::LayerOpacityChanged,
+            EventType::SurfaceContentReady => IviEventType::SurfaceContentReady,
+            EventType::SurfaceContentSizeChanged => IviEventType::SurfaceContentSizeChanged,
         }
     }
 }
@@ -863,6 +867,8 @@ impl From<IviEventType> for EventType {
             IviEventType::LayerDestroyed => EventType::LayerDestroyed,
             IviEventType::LayerVisibilityChanged => EventType::LayerVisibilityChanged,
             IviEventType::LayerOpacityChanged => EventType::LayerOpacityChanged,
+            IviEventType::SurfaceContentReady => EventType::SurfaceContentReady,
+            IviEventType::SurfaceContentSizeChanged => EventType::SurfaceContentSizeChanged,
         }
     }
 }
@@ -916,6 +922,24 @@ impl Default for IviOrientationChange {
     }
 }
 
+/// Content ready data: buffer dimensions when the first frame is committed.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IviContentReadyInfo {
+    pub width: i32,
+    pub height: i32,
+}
+
+/// Content size change data: old and new buffer dimensions.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IviContentSizeChange {
+    pub old_width: i32,
+    pub old_height: i32,
+    pub new_width: i32,
+    pub new_height: i32,
+}
+
 /// A notification event delivered to C callbacks.
 ///
 /// Only the fields relevant to `event_type` are populated; all others are
@@ -941,6 +965,8 @@ pub struct IviNotification {
     pub dest_geometry: IviGeometryChange,
     pub z_order: IviZOrderChange,
     pub orientation: IviOrientationChange,
+    pub content_ready: IviContentReadyInfo,
+    pub content_size: IviContentSizeChange,
 }
 
 fn parse_rect(params: &serde_json::Value, key: &str) -> Rectangle {
@@ -1049,6 +1075,24 @@ fn notification_to_ffi(notif: &Notification) -> IviNotification {
             result.opacity = IviOpacityChange {
                 old_opacity: p["old_opacity"].as_f64().unwrap_or(0.0) as f32,
                 new_opacity: p["new_opacity"].as_f64().unwrap_or(0.0) as f32,
+            };
+        }
+        EventType::SurfaceContentReady => {
+            result.object_type = IviObjectType::Surface;
+            result.object_id = p["surface_id"].as_u64().unwrap_or(0) as u32;
+            result.content_ready = IviContentReadyInfo {
+                width: p["width"].as_i64().unwrap_or(0) as i32,
+                height: p["height"].as_i64().unwrap_or(0) as i32,
+            };
+        }
+        EventType::SurfaceContentSizeChanged => {
+            result.object_type = IviObjectType::Surface;
+            result.object_id = p["surface_id"].as_u64().unwrap_or(0) as u32;
+            result.content_size = IviContentSizeChange {
+                old_width: p["old_width"].as_i64().unwrap_or(0) as i32,
+                old_height: p["old_height"].as_i64().unwrap_or(0) as i32,
+                new_width: p["new_width"].as_i64().unwrap_or(0) as i32,
+                new_height: p["new_height"].as_i64().unwrap_or(0) as i32,
             };
         }
     }

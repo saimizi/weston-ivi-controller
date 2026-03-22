@@ -403,6 +403,17 @@ impl StateManager {
 
             // Check property changes and emit notifications
             if let Some(old) = old_state {
+                // Detect orig_size transitions for content ready / size changed events
+                let (ow, oh) = old.orig_size;
+                let (nw, nh) = new_state.orig_size;
+                if let Ok(nm) = self.notification_manager.lock() {
+                    if (ow, oh) == (0, 0) && (nw, nh) != (0, 0) {
+                        nm.emit_surface_content_ready(surface_id, nw, nh);
+                    } else if (ow, oh) != (0, 0) && (nw, nh) != (0, 0) && (ow, oh) != (nw, nh) {
+                        nm.emit_surface_content_size_changed(surface_id, ow, oh, nw, nh);
+                    }
+                }
+
                 // Try to filter using event_mask (0 means unknown/no filter)
                 let event_mask = surface.event_mask();
                 if event_mask == 0 {

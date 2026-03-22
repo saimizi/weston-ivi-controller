@@ -36,6 +36,38 @@ impl NotificationBridge {
                 }),
             ),
 
+            NotificationData::SurfaceContentReady {
+                surface_id,
+                width,
+                height,
+            } => (
+                EventType::SurfaceContentReady,
+                json!({
+                    "event_type": "SurfaceContentReady",
+                    "surface_id": surface_id,
+                    "width": width,
+                    "height": height,
+                }),
+            ),
+
+            NotificationData::SurfaceContentSizeChanged {
+                surface_id,
+                old_width,
+                old_height,
+                new_width,
+                new_height,
+            } => (
+                EventType::SurfaceContentSizeChanged,
+                json!({
+                    "event_type": "SurfaceContentSizeChanged",
+                    "surface_id": surface_id,
+                    "old_width": old_width,
+                    "old_height": old_height,
+                    "new_width": new_width,
+                    "new_height": new_height,
+                }),
+            ),
+
             NotificationData::SurfaceDestroyed { surface_id } => (
                 EventType::SurfaceDestroyed,
                 json!({

@@ -61,6 +61,8 @@ typedef enum IviEventType {
     LAYER_DESTROYED = 10,
     LAYER_VISIBILITY_CHANGED = 11,
     LAYER_OPACITY_CHANGED = 12,
+    SURFACE_CONTENT_READY = 13,
+    SURFACE_CONTENT_SIZE_CHANGED = 14,
 } IviEventType;
 
 /*
@@ -201,6 +203,24 @@ typedef struct IviOrientationChange {
 } IviOrientationChange;
 
 /*
+ Content ready data: buffer dimensions when the first frame is committed.
+ */
+typedef struct IviContentReadyInfo {
+    int32_t width;
+    int32_t height;
+} IviContentReadyInfo;
+
+/*
+ Content size change data: old and new buffer dimensions.
+ */
+typedef struct IviContentSizeChange {
+    int32_t old_width;
+    int32_t old_height;
+    int32_t new_width;
+    int32_t new_height;
+} IviContentSizeChange;
+
+/*
  A notification event delivered to C callbacks.
 
  Only the fields relevant to `event_type` are populated; all others are
@@ -229,6 +249,8 @@ typedef struct IviNotification {
     struct IviGeometryChange dest_geometry;
     struct IviZOrderChange z_order;
     struct IviOrientationChange orientation;
+    struct IviContentReadyInfo content_ready;
+    struct IviContentSizeChange content_size;
 } IviNotification;
 
 /*
