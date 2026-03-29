@@ -6,56 +6,66 @@
 //! human-readable manner.
 use ivi_client::{IviLayer, IviScreen, IviSurface};
 
-/// Format a list of surface IDs as a comma-separated string
+/// Format a list of surfaces
 ///
 /// # Arguments
 /// * `surfaces` - Vector of surfaces to format
+/// * `ids_only` - If true, only show surface IDs
 ///
 /// # Returns
-/// A formatted string with surface IDs, or a message if no surfaces exist
-///
-/// # Examples
-/// ```
-/// let surfaces = vec![
-///     Surface { id: 1000, ... },
-///     Surface { id: 1001, ... },
-/// ];
-/// let output = format_surface_list(&surfaces);
-/// assert_eq!(output, "Surface IDs: 1000, 1001");
-/// ```
-pub fn format_surface_list(surfaces: &[IviSurface]) -> String {
+/// A formatted string with surface information, or a message if no surfaces exist
+pub fn format_surface_list(surfaces: &[IviSurface], ids_only: bool) -> String {
     if surfaces.is_empty() {
-        "No surfaces available".to_string()
-    } else {
-        let ids: Vec<String> = surfaces.iter().map(|s| s.id.to_string()).collect();
-        format!("Surface IDs: {}", ids.join(", "))
+        return "No surfaces available".to_string();
     }
+
+    if ids_only {
+        let ids: Vec<String> = surfaces.iter().map(|s| s.id.to_string()).collect();
+        return ids.join(", ");
+    }
+
+    let mut output = format!("Found {} surface(s):\n", surfaces.len());
+    for surface in surfaces {
+        output.push_str(&format!("  Surface {}:\n", surface.id));
+        output.push_str(&format!("    OrigSize: {}\n", surface.orig_size));
+        output.push_str(&format!("    SrcRect: {}\n", surface.src_rect));
+        output.push_str(&format!("    DestRect: {}\n", surface.dest_rect));
+        output.push_str(&format!("    Visibility: {}\n", surface.visibility));
+        output.push_str(&format!("    Opacity: {:.2}\n", surface.opacity));
+        output.push_str(&format!("    Orientation: {}\n", surface.orientation));
+        output.push_str(&format!("    Z-Order: {}\n", surface.z_order));
+    }
+    output.trim_end().to_string()
 }
 
-/// Format a list of layer IDs as a comma-separated string
+/// Format a list of layers
 ///
 /// # Arguments
 /// * `layers` - Vector of layers to format
+/// * `ids_only` - If true, only show layer IDs
 ///
 /// # Returns
-/// A formatted string with layer IDs, or a message if no layers exist
-///
-/// # Examples
-/// ```
-/// let layers = vec![
-///     Layer { id: 2000, ... },
-///     Layer { id: 2001, ... },
-/// ];
-/// let output = format_layer_list(&layers);
-/// assert_eq!(output, "Layer IDs: 2000, 2001");
-/// ```
-pub fn format_layer_list(layers: &[IviLayer]) -> String {
+/// A formatted string with layer information, or a message if no layers exist
+pub fn format_layer_list(layers: &[IviLayer], ids_only: bool) -> String {
     if layers.is_empty() {
-        "No layers available".to_string()
-    } else {
-        let ids: Vec<String> = layers.iter().map(|l| l.id.to_string()).collect();
-        format!("Layer IDs: {}", ids.join(", "))
+        return "No layers available".to_string();
     }
+
+    if ids_only {
+        let ids: Vec<String> = layers.iter().map(|l| l.id.to_string()).collect();
+        return format!("Layer IDs: {}", ids.join(", "));
+    }
+
+    let mut output = format!("Found {} layer(s):\n", layers.len());
+    for layer in layers {
+        output.push_str(&format!("  Layer {}:\n", layer.id));
+        output.push_str(&format!("    SrcRect: {}\n", layer.src_rect));
+        output.push_str(&format!("    DestRect: {}\n", layer.dest_rect));
+        output.push_str(&format!("    Visibility: {}\n", layer.visibility));
+        output.push_str(&format!("    Opacity: {:.2}\n", layer.opacity));
+        output.push_str(&format!("    Orientation: {}\n", layer.orientation));
+    }
+    output.trim_end().to_string()
 }
 
 pub fn format_layer_create_success(id: u32) -> String {
@@ -74,11 +84,18 @@ mod tests {
     #[test]
     fn test_format_surface_list_empty() {
         let surfaces = vec![];
-        assert_eq!(format_surface_list(&surfaces), "No surfaces available");
+        assert_eq!(
+            format_surface_list(&surfaces, false),
+            "No surfaces available"
+        );
+        assert_eq!(
+            format_surface_list(&surfaces, true),
+            "No surfaces available"
+        );
     }
 
     #[test]
-    fn test_format_surface_list_single() {
+    fn test_format_surface_list_ids_only() {
         let surfaces = vec![IviSurface {
             id: 1000,
             orig_size: IviSize {
@@ -102,11 +119,45 @@ mod tests {
             orientation: IviOrientation::Normal,
             z_order: 0,
         }];
-        assert_eq!(format_surface_list(&surfaces), "Surface IDs: 1000");
+        assert_eq!(format_surface_list(&surfaces, true), "1000");
     }
 
     #[test]
-    fn test_format_surface_list_multiple() {
+    fn test_format_surface_list_detailed() {
+        let surfaces = vec![IviSurface {
+            id: 1000,
+            orig_size: IviSize {
+                width: 100,
+                height: 100,
+            },
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            visibility: true,
+            opacity: 1.0,
+            orientation: IviOrientation::Normal,
+            z_order: 0,
+        }];
+        let output = format_surface_list(&surfaces, false);
+        assert!(output.contains("Found 1 surface(s):"));
+        assert!(output.contains("Surface 1000:"));
+        assert!(output.contains("OrigSize: 100x100"));
+        assert!(output.contains("Visibility: true"));
+        assert!(output.contains("Opacity: 1.00"));
+        assert!(output.contains("Z-Order: 0"));
+    }
+
+    #[test]
+    fn test_format_surface_list_multiple_ids_only() {
         let surfaces = vec![
             IviSurface {
                 id: 1000,
@@ -178,20 +229,77 @@ mod tests {
                 z_order: 2,
             },
         ];
-        assert_eq!(
-            format_surface_list(&surfaces),
-            "Surface IDs: 1000, 1001, 1002"
-        );
+        assert_eq!(format_surface_list(&surfaces, true), "1000, 1001, 1002");
+    }
+
+    #[test]
+    fn test_format_surface_list_multiple_detailed() {
+        let surfaces = vec![
+            IviSurface {
+                id: 1000,
+                orig_size: IviSize {
+                    width: 100,
+                    height: 100,
+                },
+                src_rect: Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 100,
+                },
+                dest_rect: Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 100,
+                },
+                visibility: true,
+                opacity: 1.0,
+                orientation: IviOrientation::Normal,
+                z_order: 0,
+            },
+            IviSurface {
+                id: 1001,
+                orig_size: IviSize {
+                    width: 200,
+                    height: 200,
+                },
+                src_rect: Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 200,
+                    height: 200,
+                },
+                dest_rect: Rectangle {
+                    x: 0,
+                    y: 0,
+                    width: 200,
+                    height: 200,
+                },
+                visibility: false,
+                opacity: 0.5,
+                orientation: IviOrientation::Rotate90,
+                z_order: 1,
+            },
+        ];
+        let output = format_surface_list(&surfaces, false);
+        assert!(output.contains("Found 2 surface(s):"));
+        assert!(output.contains("Surface 1000:"));
+        assert!(output.contains("Surface 1001:"));
+        assert!(output.contains("Visibility: false"));
+        assert!(output.contains("Opacity: 0.50"));
+        assert!(output.contains("Orientation: 90 degrees"));
     }
 
     #[test]
     fn test_format_layer_list_empty() {
         let layers = vec![];
-        assert_eq!(format_layer_list(&layers), "No layers available");
+        assert_eq!(format_layer_list(&layers, false), "No layers available");
+        assert_eq!(format_layer_list(&layers, true), "No layers available");
     }
 
     #[test]
-    fn test_format_layer_list_single() {
+    fn test_format_layer_list_ids_only() {
         let layers = vec![IviLayer {
             id: 2000,
             visibility: true,
@@ -210,11 +318,38 @@ mod tests {
             },
             orientation: IviOrientation::Normal,
         }];
-        assert_eq!(format_layer_list(&layers), "Layer IDs: 2000");
+        assert_eq!(format_layer_list(&layers, true), "Layer IDs: 2000");
     }
 
     #[test]
-    fn test_format_layer_list_multiple() {
+    fn test_format_layer_list_detailed() {
+        let layers = vec![IviLayer {
+            id: 2000,
+            visibility: true,
+            opacity: 1.0,
+            src_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            dest_rect: Rectangle {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            },
+            orientation: IviOrientation::Normal,
+        }];
+        let output = format_layer_list(&layers, false);
+        assert!(output.contains("Found 1 layer(s):"));
+        assert!(output.contains("Layer 2000:"));
+        assert!(output.contains("Visibility: true"));
+        assert!(output.contains("Opacity: 1.00"));
+    }
+
+    #[test]
+    fn test_format_layer_list_multiple_ids_only() {
         let layers = vec![
             IviLayer {
                 id: 2000,
@@ -271,7 +406,10 @@ mod tests {
                 orientation: IviOrientation::Normal,
             },
         ];
-        assert_eq!(format_layer_list(&layers), "Layer IDs: 2000, 2001, 2002");
+        assert_eq!(
+            format_layer_list(&layers, true),
+            "Layer IDs: 2000, 2001, 2002"
+        );
     }
 }
 
