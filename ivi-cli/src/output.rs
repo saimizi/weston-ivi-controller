@@ -53,7 +53,7 @@ pub fn format_layer_list(layers: &[IviLayer], ids_only: bool) -> String {
 
     if ids_only {
         let ids: Vec<String> = layers.iter().map(|l| l.id.to_string()).collect();
-        return format!("Layer IDs: {}", ids.join(", "));
+        return ids.join(", ");
     }
 
     let mut output = format!("Found {} layer(s):\n", layers.len());
@@ -318,7 +318,7 @@ mod tests {
             },
             orientation: IviOrientation::Normal,
         }];
-        assert_eq!(format_layer_list(&layers, true), "Layer IDs: 2000");
+        assert_eq!(format_layer_list(&layers, true), "2000");
     }
 
     #[test]
@@ -406,10 +406,7 @@ mod tests {
                 orientation: IviOrientation::Normal,
             },
         ];
-        assert_eq!(
-            format_layer_list(&layers, true),
-            "Layer IDs: 2000, 2001, 2002"
-        );
+        assert_eq!(format_layer_list(&layers, true), "2000, 2001, 2002");
     }
 }
 
