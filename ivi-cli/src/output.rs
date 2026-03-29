@@ -21,7 +21,7 @@ pub fn format_surface_list(surfaces: &[IviSurface], ids_only: bool) -> String {
 
     if ids_only {
         let ids: Vec<String> = surfaces.iter().map(|s| s.id.to_string()).collect();
-        return ids.join(", ");
+        return ids.join(" ");
     }
 
     let mut output = format!("Found {} surface(s):\n", surfaces.len());
@@ -53,7 +53,7 @@ pub fn format_layer_list(layers: &[IviLayer], ids_only: bool) -> String {
 
     if ids_only {
         let ids: Vec<String> = layers.iter().map(|l| l.id.to_string()).collect();
-        return ids.join(", ");
+        return ids.join(" ");
     }
 
     let mut output = format!("Found {} layer(s):\n", layers.len());
@@ -229,7 +229,7 @@ mod tests {
                 z_order: 2,
             },
         ];
-        assert_eq!(format_surface_list(&surfaces, true), "1000, 1001, 1002");
+        assert_eq!(format_surface_list(&surfaces, true), "1000 1001 1002");
     }
 
     #[test]
@@ -406,7 +406,7 @@ mod tests {
                 orientation: IviOrientation::Normal,
             },
         ];
-        assert_eq!(format_layer_list(&layers, true), "2000, 2001, 2002");
+        assert_eq!(format_layer_list(&layers, true), "2000 2001 2002");
     }
 }
 
