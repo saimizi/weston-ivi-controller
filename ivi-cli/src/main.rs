@@ -62,7 +62,11 @@ enum Commands {
 #[derive(Subcommand)]
 enum SurfaceCommands {
     /// List all available surfaces
-    List,
+    List {
+        /// Show only surface IDs
+        #[arg(long, default_value_t = false)]
+        ids_only: bool,
+    },
     /// Get properties of a specific surface
     GetProps {
         /// Surface ID
@@ -127,7 +131,11 @@ enum SurfaceCommands {
 #[derive(Subcommand)]
 enum LayerCommands {
     /// List all available layers
-    List,
+    List {
+        /// Show only layer IDs
+        #[arg(long, default_value_t = false)]
+        ids_only: bool,
+    },
     /// Get properties of a specific layer
     GetProps {
         /// Layer ID
@@ -299,9 +307,9 @@ impl IviCli {
         })
     }
     /// Handle surface list command
-    fn handle_surface_list(&mut self) -> Result<String> {
+    fn handle_surface_list(&mut self, ids_only: bool) -> Result<String> {
         let surfaces = self.client.list_surfaces()?;
-        Ok(output::format_surface_list(&surfaces))
+        Ok(output::format_surface_list(&surfaces, ids_only))
     }
 
     /// Handle surface get-props command
@@ -368,9 +376,9 @@ impl IviCli {
     }
 
     /// Handle layer list command
-    fn handle_layer_list(&mut self) -> Result<String> {
+    fn handle_layer_list(&mut self, ids_only: bool) -> Result<String> {
         let layers = self.client.list_layers()?;
-        Ok(output::format_layer_list(&layers))
+        Ok(output::format_layer_list(&layers, ids_only))
     }
 
     /// Handle layer get-props command
@@ -575,7 +583,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Surface { command } => match command {
-            SurfaceCommands::List => ivi_cli.handle_surface_list(),
+            SurfaceCommands::List { ids_only } => ivi_cli.handle_surface_list(ids_only),
             SurfaceCommands::GetProps { id } => ivi_cli.handle_surface_get_properties(id),
             SurfaceCommands::SetVisibility { id, visible } => {
                 ivi_cli.handle_surface_set_visibility(id, visible)
@@ -603,7 +611,7 @@ fn main() -> Result<()> {
             SurfaceCommands::SetFocus { id } => ivi_cli.handle_surface_set_focus(id),
         },
         Commands::Layer { command } => match command {
-            LayerCommands::List => ivi_cli.handle_layer_list(),
+            LayerCommands::List { ids_only } => ivi_cli.handle_layer_list(ids_only),
             LayerCommands::GetProps { id } => ivi_cli.handle_layer_get_properties(id),
             LayerCommands::Create { id, width, height } => {
                 ivi_cli.handle_layer_create_layer(id, width, height)

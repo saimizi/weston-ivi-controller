@@ -242,7 +242,7 @@ impl IviClient {
     /// ```
     pub fn list_surfaces(&mut self) -> Result<Vec<IviSurface>> {
         let result = self.send_request("list_surfaces", json!({}))?;
-        eprintln!("list_surfaces result: {}", result);
+        jdebug!("list_surfaces result: {}", result);
 
         // Extract the "surfaces" array from the result object
         let surfaces: Vec<IviSurface> = serde_json::from_value(

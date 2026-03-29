@@ -1199,7 +1199,7 @@ Clients may subscribe to real-time events. Subscriptions are per-client and sele
 - Multiple clients: Supported
 
 Supported event types:
-- `SurfaceCreated`, `SurfaceDestroyed`, `SourceGeometryChanged`, `DestinationGeometryChanged`, `VisibilityChanged`, `OpacityChanged`, `OrientationChanged`, `ZOrderChanged`, `FocusChanged`
+- `SurfaceCreated`, `SurfaceContentReady`, `SurfaceContentSizeChanged`, `SurfaceDestroyed`, `SourceGeometryChanged`, `DestinationGeometryChanged`, `VisibilityChanged`, `OpacityChanged`, `OrientationChanged`, `ZOrderChanged`, `FocusChanged`
 - `LayerCreated`, `LayerDestroyed`, `LayerVisibilityChanged`, `LayerOpacityChanged`
 
 ### subscribe
@@ -1340,6 +1340,24 @@ Examples:
 - LayerOpacityChanged
 ```json
 { "method": "notification", "params": { "event_type": "LayerOpacityChanged", "layer_id": 5000, "old_opacity": 0.5, "new_opacity": 1.0 } }
+```
+
+- SurfaceContentReady
+```json
+{ "method": "notification", "params": { "event_type": "SurfaceContentReady", "surface_id": 1000, "width": 1920, "height": 1080 } }
+```
+
+- SurfaceContentSizeChanged
+```json
+{
+  "method": "notification",
+  "params": {
+    "event_type": "SurfaceContentSizeChanged",
+    "surface_id": 1000,
+    "old_width": 1920, "old_height": 1080,
+    "new_width": 1280, "new_height": 720
+  }
+}
 ```
 
 ---

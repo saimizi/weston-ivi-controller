@@ -282,6 +282,8 @@ The library supports receiving unsolicited event notifications from the controll
 | Rust `EventType`             | C `IviEventType`               | Triggered when                              |
 |------------------------------|--------------------------------|---------------------------------------------|
 | `SurfaceCreated`             | `SURFACE_CREATED`              | A new surface is created                    |
+| `SurfaceContentReady`        | `SURFACE_CONTENT_READY`        | Surface commits its first buffer            |
+| `SurfaceContentSizeChanged`  | `SURFACE_CONTENT_SIZE_CHANGED` | Surface buffer dimensions change            |
 | `SurfaceDestroyed`           | `SURFACE_DESTROYED`            | A surface is destroyed                      |
 | `SourceGeometryChanged`      | `SOURCE_GEOMETRY_CHANGED`      | Surface source rectangle changes            |
 | `DestinationGeometryChanged` | `DESTINATION_GEOMETRY_CHANGED` | Surface destination rectangle changes       |
@@ -309,6 +311,8 @@ typedef struct IviNotification {
     IviGeometryChange    dest_geometry; // { old_rect, new_rect }
     IviZOrderChange      z_order;       // { old_z_order, new_z_order }
     IviOrientationChange orientation;   // { old_orientation, new_orientation }
+    IviContentReadyInfo  content_ready; // { width, height } — SurfaceContentReady only
+    IviContentSizeChange content_size;  // { old_width, old_height, new_width, new_height } — SurfaceContentSizeChanged only
 } IviNotification;
 ```
 
