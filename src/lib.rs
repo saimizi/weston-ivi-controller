@@ -584,6 +584,9 @@ unsafe fn plugin_init_impl(
 unsafe fn parse_plugin_config(argc: c_int, argv: *const *const c_char) -> PluginConfig {
     let mut config = PluginConfig::default();
 
+    // Parse environment variables first (command-line args will override them)
+    parse_environment_config(&mut config);
+
     // Parse command-line arguments
     if !argv.is_null() {
         for i in 0..argc as isize {
@@ -712,9 +715,6 @@ unsafe fn parse_plugin_config(argc: c_int, argv: *const *const c_char) -> Plugin
             }
         }
     }
-
-    // Parse environment variables (they override defaults but are overridden by command-line args)
-    parse_environment_config(&mut config);
 
     config
 }
